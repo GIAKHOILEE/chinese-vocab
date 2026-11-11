@@ -1,0 +1,46 @@
+// Prisma Schema cho Chinese Writing Practice
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Bảng lưu trữ từ vựng của người dùng
+model Vocabulary {
+  id        String   @id @default(uuid())
+  word      String   @unique // Từ tiếng Trung (Ví dụ: 学习) - Đảm bảo tính duy nhất
+  meaning   String   // Nghĩa tiếng Việt (Ví dụ: học)
+  pinyin    String?  // Phiên âm Pinyin (Ví dụ: xuéxí)
+  level     String?  // Cấp độ (Ví dụ: HSK1, Beginner)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([word])
+}
+
+// Bảng lưu trữ bộ bài tập luyện viết
+model PracticeSet {
+  id            String     @id @default(uuid())
+  title         String     // Tiêu đề bài tập
+  description   String?    // Mô tả ngắn nội dung bài tập
+  vocabularyIds Json       // Danh sách ID từ vựng được chọn
+  difficulty    String     // Độ khó (Beginner, HSK1, HSK2, HSK3)
+  questionCount Int        // Số lượng câu hỏi
+  createdAt     DateTime   @default(now())
+  questions     Question[] // Các câu hỏi thuộc bộ bài tập này
+}
+
+// Bảng lưu trữ từng câu hỏi luyện viết
+model Question {
+  id             String      @id @default(uuid())
+  practiceSetId  String      // Mã bộ bài tập
+  practiceSet    PracticeSet @relation(fields: [practiceSetId], references: id, onDelete: Cascade)
+  vietnamese     String      // Câu tiếng Việt
+  chinese        String      // Câu tiếng Trung chuẩn
+  pinyin         String      // Pinyin của câu tiếng Trung
+  usedVocabulary Json        // Mảng các từ vựng đã sử dụng trong câu
+  createdAt      DateTime    @default(now())
+}
