@@ -3,12 +3,27 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
-import { BookOpen, PenTool, History, PlusCircle, ArrowRight, Sparkles } from 'lucide-react';
+import { BookOpen, PenTool, History, PlusCircle, ArrowRight, Sparkles, GraduationCap } from 'lucide-react';
 
 interface Stats {
   vocabularyCount: number;
   practiceSetCount: number;
   questionsPracticed: number;
+}
+
+interface CurriculumSummary {
+  profile: {
+    dailyMinutesTarget: number;
+    currentDayNumber: number;
+  };
+  stats: {
+    hsk1Count: number;
+    hsk2Count: number;
+    hsk2Target: number;
+    dueReviewCount: number;
+    grammarTotal: number;
+    grammarMastered: number;
+  };
 }
 
 export default function DashboardPage() {
@@ -17,13 +32,18 @@ export default function DashboardPage() {
     practiceSetCount: 0,
     questionsPracticed: 0,
   });
+  const [curriculum, setCurriculum] = useState<CurriculumSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadStats() {
       try {
-        const data = await fetchApi<Stats>('/practice/stats/dashboard');
+        const [data, curr] = await Promise.all([
+          fetchApi<Stats>('/practice/stats/dashboard'),
+          fetchApi<CurriculumSummary>('/curriculum/summary').catch(() => null),
+        ]);
         setStats(data);
+        setCurriculum(curr);
       } catch (err) {
         console.error('Không thể tải thống kê Dashboard:', err);
       } finally {
@@ -92,6 +112,39 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Lộ trình HSK 2 (3.0) Cá nhân hóa */}
+      {curriculum && (
+        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white p-6 rounded-xl shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-indigo-100">
+                Giáo trình cá nhân • Ngày thứ {curriculum.profile.currentDayNumber} ({curriculum.profile.dailyMinutesTarget} phút/ngày)
+              </div>
+              <h2 className="text-xl font-bold mt-1">Mục tiêu HSK 2 (Bản 3.0)</h2>
+              <p className="text-sm text-indigo-100 mt-1">
+                HSK 1: {curriculum.stats.hsk1Count} từ • HSK 2: {curriculum.stats.hsk2Count}/{curriculum.stats.hsk2Target} từ • Cần ôn hôm nay: {curriculum.stats.dueReviewCount} từ • Ngữ pháp: {curriculum.stats.grammarMastered}/{curriculum.stats.grammarTotal}
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Link
+                href="/study"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-white text-indigo-700 hover:bg-indigo-50 font-semibold text-sm shadow-sm transition"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>Vào học hôm nay</span>
+              </Link>
+              <Link
+                href="/grammar"
+                className="inline-flex items-center gap-2 px-3 py-2.5 rounded-lg bg-indigo-500/40 hover:bg-indigo-500/60 text-white font-medium text-sm transition"
+              >
+                <GraduationCap className="w-4 h-4" />
+                <span>Ngữ pháp</span>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Các nút hành động nhanh */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">

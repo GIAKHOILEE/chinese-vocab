@@ -2,13 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, PenTool, History, LayoutDashboard } from 'lucide-react';
+import { BookOpen, PenTool, History, LayoutDashboard, GraduationCap, Sparkles } from 'lucide-react';
 
 export default function Navigation() {
   const pathname = usePathname();
 
   const navItems = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+    { href: '/study', label: 'Lộ trình HSK 2', icon: Sparkles },
+    { href: '/grammar', label: 'Ngữ pháp', icon: GraduationCap },
     { href: '/vocabulary', label: 'Từ vựng', icon: BookOpen },
     { href: '/practice/new', label: 'Tạo bài tập', icon: PenTool },
     { href: '/practice', label: 'Lịch sử', icon: History },
