@@ -10,14 +10,16 @@ datasource db {
 
 // Bảng lưu trữ từ vựng của người dùng
 model Vocabulary {
-  id        String   @id @default(uuid())
-  word      String   @unique // Từ tiếng Trung (Ví dụ: 学习) - Đảm bảo tính duy nhất
-  meaning   String   // Nghĩa tiếng Việt (Ví dụ: học)
-  pinyin    String?  // Phiên âm Pinyin (Ví dụ: xuéxí)
-  level     String?  // Cấp độ (Ví dụ: HSK1, Beginner)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(uuid())
+  word         String   // Từ tiếng Trung (Ví dụ: 学习)
+  meaning      String   // Nghĩa tiếng Việt (Ví dụ: học)
+  pinyin       String?  // Phiên âm Pinyin (Ví dụ: xuéxí)
+  partOfSpeech String   @default("") // Từ loại (Ví dụ: Động từ, Danh từ, Tính từ...)
+  level        String?  // Cấp độ (Ví dụ: HSK1, Beginner)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
+  @@unique([word, partOfSpeech])
   @@index([word])
 }
 

@@ -15,5 +15,9 @@ export class CreateVocabularyDto {
 
   @IsOptional()
   @IsString()
+  partOfSpeech?: string;
+
+  @IsOptional()
+  @IsString()
   level?: string;
 }

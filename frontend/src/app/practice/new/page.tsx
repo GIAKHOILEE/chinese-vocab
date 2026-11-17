@@ -17,6 +17,7 @@ interface Vocabulary {
   id: string;
   word: string;
   meaning: string;
+  partOfSpeech?: string;
   pinyin: string | null;
   level: string | null;
 }
@@ -241,6 +242,11 @@ export default function NewPracticePage() {
                       )}
                       <div>
                         <span className="font-chinese font-bold text-base mr-2">{vocab.word}</span>
+                        {vocab.partOfSpeech && (
+                          <span className="text-[11px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded mr-2 font-medium">
+                            {vocab.partOfSpeech}
+                          </span>
+                        )}
                         <span className="text-xs text-slate-500 font-sans mr-2">({vocab.pinyin})</span>
                         <span className="text-sm font-medium text-slate-800">{vocab.meaning}</span>
                       </div>

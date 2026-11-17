@@ -20,16 +20,33 @@ interface Vocabulary {
   id: string;
   word: string;
   meaning: string;
+  partOfSpeech: string;
   pinyin: string | null;
   level: string | null;
   createdAt: string;
 }
+
+const PART_OF_SPEECH_OPTIONS = [
+  'Danh từ',
+  'Động từ',
+  'Tính từ',
+  'Đại từ',
+  'Phó từ',
+  'Số từ',
+  'Lượng từ',
+  'Giới từ',
+  'Liên từ',
+  'Trợ từ',
+  'Thán từ',
+  'Cụm từ',
+];
 
 export default function VocabularyPage() {
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
+  const [partOfSpeechFilter, setPartOfSpeechFilter] = useState('ALL');
 
   // Trạng thái Modals / Forms
   const [activeTab, setActiveTab] = useState<'list' | 'single' | 'bulk' | 'csv'>('list');
@@ -40,14 +57,17 @@ export default function VocabularyPage() {
   const [singleForm, setSingleForm] = useState({
     word: '',
     meaning: '',
+    partOfSpeech: '',
     pinyin: '',
-    level: 'HSK1',
+    level: 'HSK2',
   });
 
   // Form paste nhiều dòng
   const [bulkText, setBulkText] = useState('');
-  const [bulkLevel, setBulkLevel] = useState('HSK1');
-  const [bulkPreview, setBulkPreview] = useState<{ word: string; meaning: string; pinyin: string }[]>([]);
+  const [bulkLevel, setBulkLevel] = useState('HSK2');
+  const [bulkPreview, setBulkPreview] = useState<
+    { word: string; meaning: string; partOfSpeech: string; pinyin: string }[]
+  >([]);
 
   // CSV
   const [csvContent, setCsvContent] = useState('');
@@ -57,6 +77,7 @@ export default function VocabularyPage() {
   const [editForm, setEditForm] = useState({
     word: '',
     meaning: '',
+    partOfSpeech: '',
     pinyin: '',
     level: 'HSK1',
   });
@@ -68,6 +89,9 @@ export default function VocabularyPage() {
       const queryParams = new URLSearchParams();
       if (search) queryParams.append('search', search);
       if (levelFilter && levelFilter !== 'ALL') queryParams.append('level', levelFilter);
+      if (partOfSpeechFilter && partOfSpeechFilter !== 'ALL') {
+        queryParams.append('partOfSpeech', partOfSpeechFilter);
+      }
 
       const data = await fetchApi<Vocabulary[]>(`/vocabulary?${queryParams.toString()}`);
       setVocabularies(data);
@@ -80,7 +104,7 @@ export default function VocabularyPage() {
 
   useEffect(() => {
     loadVocabularies();
-  }, [search, levelFilter]);
+  }, [search, levelFilter, partOfSpeechFilter]);
 
   // Xử lý xem preview Paste nhiều từ
   useEffect(() => {
@@ -94,7 +118,8 @@ export default function VocabularyPage() {
       return {
         word: parts[0] || '',
         meaning: parts[1] || parts[0] || '',
-        pinyin: parts[2] || '(Tự động sinh Pinyin)',
+        partOfSpeech: parts[2] || '',
+        pinyin: parts[3] || '(Tự động sinh Pinyin)',
       };
     });
     setBulkPreview(previewItems);
@@ -110,7 +135,7 @@ export default function VocabularyPage() {
         body: JSON.stringify(singleForm),
       });
       setSuccessMsg(`Đã thêm từ "${singleForm.word}" thành công!`);
-      setSingleForm({ word: '', meaning: '', pinyin: '', level: 'HSK1' });
+      setSingleForm({ word: '', meaning: '', partOfSpeech: '', pinyin: '', level: 'HSK2' });
       setActiveTab('list');
       loadVocabularies();
     } catch (err: any) {
@@ -172,8 +197,9 @@ export default function VocabularyPage() {
     setEditForm({
       word: vocab.word,
       meaning: vocab.meaning,
+      partOfSpeech: vocab.partOfSpeech || '',
       pinyin: vocab.pinyin || '',
-      level: vocab.level || 'HSK1',
+      level: vocab.level || 'HSK2',
     });
   };
 
@@ -279,6 +305,22 @@ export default function VocabularyPage() {
             </div>
 
             <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">Từ loại</label>
+              <select
+                value={singleForm.partOfSpeech}
+                onChange={(e) => setSingleForm({ ...singleForm, partOfSpeech: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+              >
+                <option value="">Chưa phân loại</option>
+                {PART_OF_SPEECH_OPTIONS.map((pos) => (
+                  <option key={pos} value={pos}>
+                    {pos}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
               <label className="block text-xs font-medium text-slate-700 mb-1">Pinyin (Optional)</label>
               <input
                 type="text"
@@ -335,12 +377,12 @@ export default function VocabularyPage() {
 
           <div className="space-y-3">
             <p className="text-xs text-slate-500">
-              Nhập danh sách từ vựng. Định dạng đơn giản: mỗi dòng 1 từ tiếng Trung. Hoặc mở rộng với dấu | (ví dụ: <code className="bg-slate-100 px-1">学习 | học | xuéxí | HSK1</code>).
+              Nhập danh sách từ vựng. Định dạng đơn giản: mỗi dòng 1 từ tiếng Trung. Hoặc mở rộng với dấu | (ví dụ: <code className="bg-slate-100 px-1">学习 | học | Động từ | xuéxí | HSK1</code>).
             </p>
 
             <textarea
               rows={6}
-              placeholder="学习&#10;中文&#10;朋友&#10;学校&#10;喜欢"
+              placeholder="学习 | học | Động từ&#10;中文 | tiếng Trung | Danh từ&#10;朋友 | bạn bè | Danh từ"
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
               className="w-full p-3 border rounded-lg text-sm font-chinese focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -352,9 +394,16 @@ export default function VocabularyPage() {
                 <span className="font-semibold text-slate-700">Xem trước (Preview {bulkPreview.length} từ):</span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {bulkPreview.map((item, idx) => (
-                    <div key={idx} className="bg-white p-2 border rounded flex justify-between">
-                      <span className="font-chinese font-bold text-slate-800">{item.word}</span>
-                      <span className="text-slate-500">{item.meaning}</span>
+                    <div key={idx} className="bg-white p-2 border rounded flex justify-between items-center gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-chinese font-bold text-slate-800">{item.word}</span>
+                        {item.partOfSpeech && (
+                          <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-medium">
+                            {item.partOfSpeech}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-slate-500 truncate">{item.meaning}</span>
                     </div>
                   ))}
                 </div>
@@ -393,12 +442,12 @@ export default function VocabularyPage() {
 
           <div className="space-y-3">
             <p className="text-xs text-slate-500">
-              Định dạng CSV yêu cầu các cột: <code className="bg-slate-100 px-1 font-mono">word,meaning,pinyin,level</code>
+              Định dạng CSV yêu cầu các cột: <code className="bg-slate-100 px-1 font-mono">word,meaning,partOfSpeech,pinyin,level</code>
             </p>
 
             <textarea
               rows={5}
-              placeholder="word,meaning,pinyin,level&#10;学习,học,xuéxí,HSK1&#10;中文,tiếng Trung,Zhōngwén,HSK1"
+              placeholder="word,meaning,partOfSpeech,pinyin,level&#10;学习,học,Động từ,xuéxí,HSK1&#10;中文,tiếng Trung,Danh từ,Zhōngwén,HSK1"
               value={csvContent}
               onChange={(e) => setCsvContent(e.target.value)}
               className="w-full p-3 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -439,8 +488,21 @@ export default function VocabularyPage() {
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
             <Filter className="w-4 h-4 text-slate-400" />
+            <select
+              value={partOfSpeechFilter}
+              onChange={(e) => setPartOfSpeechFilter(e.target.value)}
+              className="px-3 py-2 border rounded-lg text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="ALL">Tất cả từ loại</option>
+              {PART_OF_SPEECH_OPTIONS.map((pos) => (
+                <option key={pos} value={pos}>
+                  {pos}
+                </option>
+              ))}
+              <option value="UNSET">Chưa phân loại</option>
+            </select>
             <select
               value={levelFilter}
               onChange={(e) => setLevelFilter(e.target.value)}
@@ -462,6 +524,7 @@ export default function VocabularyPage() {
             <thead className="bg-slate-50 text-slate-700 font-medium border-b text-xs uppercase tracking-wider">
               <tr>
                 <th className="px-6 py-3">Chinese</th>
+                <th className="px-6 py-3">Từ loại</th>
                 <th className="px-6 py-3">Meaning</th>
                 <th className="px-6 py-3">Pinyin</th>
                 <th className="px-6 py-3">Level</th>
@@ -471,13 +534,13 @@ export default function VocabularyPage() {
             <tbody className="divide-y divide-slate-200">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
+                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
                     Đang tải danh sách từ vựng...
                   </td>
                 </tr>
               ) : vocabularies.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
+                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
                     Chưa có từ vựng nào. Hãy bấm &quot;Thêm thủ công&quot; hoặc &quot;Paste nhiều từ&quot; để tạo mới.
                   </td>
                 </tr>
@@ -495,6 +558,20 @@ export default function VocabularyPage() {
                             onChange={(e) => setEditForm({ ...editForm, word: e.target.value })}
                             className="w-full px-2 py-1 border rounded text-sm font-chinese"
                           />
+                        </td>
+                        <td className="px-6 py-3">
+                          <select
+                            value={editForm.partOfSpeech}
+                            onChange={(e) => setEditForm({ ...editForm, partOfSpeech: e.target.value })}
+                            className="px-2 py-1 border rounded text-sm bg-white"
+                          >
+                            <option value="">Chưa phân loại</option>
+                            {PART_OF_SPEECH_OPTIONS.map((pos) => (
+                              <option key={pos} value={pos}>
+                                {pos}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-6 py-3">
                           <input
@@ -522,6 +599,7 @@ export default function VocabularyPage() {
                             <option value="HSK1">HSK1</option>
                             <option value="HSK2">HSK2</option>
                             <option value="HSK3">HSK3</option>
+                            <option value="HSK4">HSK4</option>
                           </select>
                         </td>
                         <td className="px-6 py-3 text-right">
@@ -558,6 +636,15 @@ export default function VocabularyPage() {
                             <Volume2 className="w-4 h-4" />
                           </button>
                         </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {vocab.partOfSpeech ? (
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap">
+                            {vocab.partOfSpeech}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 text-xs">-</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 font-medium text-slate-800">{vocab.meaning}</td>
                       <td className="px-6 py-4 text-slate-500 font-sans">{vocab.pinyin || '-'}</td>

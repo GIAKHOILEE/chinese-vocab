@@ -22,11 +22,15 @@ export class VocabularyController {
   constructor(private readonly vocabularyService: VocabularyService) {}
 
   /**
-   * GET /vocabulary - Lấy danh sách từ vựng (hỗ trợ search và level)
+   * GET /vocabulary - Lấy danh sách từ vựng (hỗ trợ search, level và partOfSpeech)
    */
   @Get()
-  findAll(@Query('search') search?: string, @Query('level') level?: string) {
-    return this.vocabularyService.findAll(search, level);
+  findAll(
+    @Query('search') search?: string,
+    @Query('level') level?: string,
+    @Query('partOfSpeech') partOfSpeech?: string,
+  ) {
+    return this.vocabularyService.findAll(search, level, partOfSpeech);
   }
 
   /**

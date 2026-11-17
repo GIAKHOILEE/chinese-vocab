@@ -13,10 +13,23 @@ export class VocabularyService {
     private readonly pinyinService: PinyinService,
   ) {}
 
+  private makeKey(word: string, partOfSpeech: string): string {
+    return `${word}|||${partOfSpeech}`;
+  }
+
+  private async findExistingKeySet(words: string[]): Promise<Set<string>> {
+    if (words.length === 0) return new Set();
+    const existingVocabs = await this.prisma.vocabulary.findMany({
+      where: { word: { in: words } },
+      select: { word: true, partOfSpeech: true },
+    });
+    return new Set(existingVocabs.map((v) => this.makeKey(v.word, v.partOfSpeech || '')));
+  }
+
   /**
-   * Lấy danh sách từ vựng có hỗ trợ tìm kiếm theo từ/nghĩa và lọc theo cấp độ (Level)
+   * Lấy danh sách từ vựng có hỗ trợ tìm kiếm theo từ/nghĩa và lọc theo cấp độ (Level) và từ loại
    */
-  async findAll(search?: string, level?: string) {
+  async findAll(search?: string, level?: string, partOfSpeech?: string) {
     const where: any = {};
 
     if (search && search.trim()) {
@@ -30,6 +43,10 @@ export class VocabularyService {
 
     if (level && level.trim() && level !== 'ALL') {
       where.level = level.trim();
+    }
+
+    if (partOfSpeech && partOfSpeech.trim() && partOfSpeech !== 'ALL') {
+      where.partOfSpeech = partOfSpeech === 'UNSET' ? '' : partOfSpeech.trim();
     }
 
     return this.prisma.vocabulary.findMany({
@@ -50,55 +67,82 @@ export class VocabularyService {
   }
 
   /**
-   * Tạo một từ vựng mới thủ công (kiểm tra từ đã tồn tại)
+   * Tạo một từ vựng mới thủ công (chỉ chặn trùng khi trùng cả từ tiếng Trung và từ loại)
    */
   async create(dto: CreateVocabularyDto) {
     const cleanWord = dto.word.trim();
+    const cleanPartOfSpeech = dto.partOfSpeech?.trim() || '';
 
-    // Kiểm tra xem từ đã tồn tại chưa
+    // Kiểm tra xem cặp (từ tiếng Trung, từ loại) đã tồn tại chưa
     const existing = await this.prisma.vocabulary.findUnique({
-      where: { word: cleanWord },
+      where: {
+        word_partOfSpeech: {
+          word: cleanWord,
+          partOfSpeech: cleanPartOfSpeech,
+        },
+      },
     });
 
     if (existing) {
-      throw new BadRequestException(`Từ vựng "${cleanWord}" đã tồn tại trong hệ thống.`);
+      const posLabel = cleanPartOfSpeech || 'Chưa phân loại';
+      throw new BadRequestException(
+        `Từ vựng "${cleanWord}" (${posLabel}) đã tồn tại trong hệ thống.`,
+      );
     }
 
-    const pinyinValue = dto.pinyin && dto.pinyin.trim() 
-      ? dto.pinyin.trim() 
-      : this.pinyinService.generatePinyin(cleanWord);
+    const pinyinValue =
+      dto.pinyin && dto.pinyin.trim()
+        ? dto.pinyin.trim()
+        : this.pinyinService.generatePinyin(cleanWord);
 
     return this.prisma.vocabulary.create({
       data: {
         word: cleanWord,
         meaning: dto.meaning.trim(),
         pinyin: pinyinValue,
+        partOfSpeech: cleanPartOfSpeech,
         level: dto.level?.trim() || 'HSK1',
       },
     });
   }
 
   /**
-   * Xử lý paste nhiều dòng từ vựng (tự động lọc bỏ các từ trùng lặp)
+   * Xử lý paste nhiều dòng từ vựng (tự động lọc bỏ các từ trùng cả từ và từ loại)
    */
   async bulkPaste(dto: BulkPasteDto) {
-    const lines = dto.text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
-    
-    // Tách từ vựng và loại bỏ các dòng bị trùng trong cùng một lần paste
-    const parsedItems: { word: string; meaning: string; pinyinInput?: string; levelInput: string }[] = [];
-    const seenWords = new Set<string>();
+    const lines = dto.text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    // Tách từ vựng và loại bỏ các dòng bị trùng (word + partOfSpeech) trong cùng một lần paste
+    const parsedItems: {
+      word: string;
+      meaning: string;
+      partOfSpeech: string;
+      pinyinInput?: string;
+      levelInput: string;
+    }[] = [];
+    const seenKeys = new Set<string>();
+    const uniqueWords = new Set<string>();
 
     for (const line of lines) {
       const parts = line.split(/[|]/).map((p) => p.trim());
       const word = parts[0];
-      if (!word || seenWords.has(word)) continue;
-      
-      seenWords.add(word);
+      if (!word) continue;
+
+      const partOfSpeech = parts[2] || dto.defaultPartOfSpeech?.trim() || '';
+      const key = this.makeKey(word, partOfSpeech);
+      if (seenKeys.has(key)) continue;
+
+      seenKeys.add(key);
+      uniqueWords.add(word);
       parsedItems.push({
         word,
         meaning: parts[1] || word,
-        pinyinInput: parts[2],
-        levelInput: parts[3] || dto.defaultLevel || 'HSK1',
+        partOfSpeech,
+        pinyinInput: parts[3],
+        levelInput: parts[4] || dto.defaultLevel || 'HSK1',
       });
     }
 
@@ -106,22 +150,20 @@ export class VocabularyService {
       return { message: 'Không có từ vựng hợp lệ để thêm.', count: 0, skippedCount: 0 };
     }
 
-    // Lấy danh sách từ đã có trong DB
-    const existingVocabs = await this.prisma.vocabulary.findMany({
-      where: { word: { in: Array.from(seenWords) } },
-      select: { word: true },
-    });
-    const existingWordSet = new Set(existingVocabs.map((v) => v.word));
-
-    const newItems = parsedItems.filter((item) => !existingWordSet.has(item.word));
+    const existingKeySet = await this.findExistingKeySet(Array.from(uniqueWords));
+    const newItems = parsedItems.filter(
+      (item) => !existingKeySet.has(this.makeKey(item.word, item.partOfSpeech)),
+    );
     const skippedCount = parsedItems.length - newItems.length;
 
     const dataToInsert = newItems.map((item) => ({
       word: item.word,
       meaning: item.meaning,
-      pinyin: item.pinyinInput && item.pinyinInput.trim()
-        ? item.pinyinInput.trim()
-        : this.pinyinService.generatePinyin(item.word),
+      partOfSpeech: item.partOfSpeech,
+      pinyin:
+        item.pinyinInput && item.pinyinInput.trim()
+          ? item.pinyinInput.trim()
+          : this.pinyinService.generatePinyin(item.word),
       level: item.levelInput,
     }));
 
@@ -144,25 +186,51 @@ export class VocabularyService {
   }
 
   /**
-   * Nhập từ vựng trực tiếp từ mảng đã được xác thực (bỏ qua trùng lặp)
+   * Nhập từ vựng trực tiếp từ mảng đã được xác thực (bỏ qua trùng lặp word + partOfSpeech)
    */
   async bulkInsert(dto: BulkVocabularyDto) {
-    const words = dto.items.map((i) => i.word.trim()).filter(Boolean);
-    const uniqueWords = Array.from(new Set(words));
+    const seenKeys = new Set<string>();
+    const uniqueWords = new Set<string>();
+    const dedupedItems: {
+      word: string;
+      meaning: string;
+      partOfSpeech: string;
+      pinyin?: string;
+      level?: string;
+    }[] = [];
 
-    const existingVocabs = await this.prisma.vocabulary.findMany({
-      where: { word: { in: uniqueWords } },
-      select: { word: true },
-    });
-    const existingSet = new Set(existingVocabs.map((v) => v.word));
+    for (const item of dto.items) {
+      const word = item.word.trim();
+      if (!word) continue;
+      const partOfSpeech = item.partOfSpeech?.trim() || '';
+      const key = this.makeKey(word, partOfSpeech);
+      if (seenKeys.has(key)) continue;
 
-    const newItems = dto.items.filter((item) => !existingSet.has(item.word.trim()));
+      seenKeys.add(key);
+      uniqueWords.add(word);
+      dedupedItems.push({
+        word,
+        meaning: item.meaning.trim(),
+        partOfSpeech,
+        pinyin: item.pinyin,
+        level: item.level,
+      });
+    }
+
+    const existingKeySet = await this.findExistingKeySet(Array.from(uniqueWords));
+    const newItems = dedupedItems.filter(
+      (item) => !existingKeySet.has(this.makeKey(item.word, item.partOfSpeech)),
+    );
     const skippedCount = dto.items.length - newItems.length;
 
     const dataToInsert = newItems.map((item) => ({
-      word: item.word.trim(),
-      meaning: item.meaning.trim(),
-      pinyin: item.pinyin && item.pinyin.trim() ? item.pinyin.trim() : this.pinyinService.generatePinyin(item.word),
+      word: item.word,
+      meaning: item.meaning,
+      partOfSpeech: item.partOfSpeech,
+      pinyin:
+        item.pinyin && item.pinyin.trim()
+          ? item.pinyin.trim()
+          : this.pinyinService.generatePinyin(item.word),
       level: item.level?.trim() || 'HSK1',
     }));
 
@@ -185,7 +253,7 @@ export class VocabularyService {
   }
 
   /**
-   * Import dữ liệu từ vựng từ file CSV (bỏ qua các từ trùng lặp)
+   * Import dữ liệu từ vựng từ file CSV (bỏ qua các từ trùng lặp word + partOfSpeech)
    */
   async importCsv(csvContent: string) {
     const records = parse(csvContent, {
@@ -194,14 +262,34 @@ export class VocabularyService {
       trim: true,
     });
 
-    const parsedItems: { word: string; meaning: string; pinyin: string; level: string }[] = [];
-    const seenWords = new Set<string>();
+    const parsedItems: {
+      word: string;
+      meaning: string;
+      partOfSpeech: string;
+      pinyin: string;
+      level: string;
+    }[] = [];
+    const seenKeys = new Set<string>();
+    const uniqueWords = new Set<string>();
 
     for (const record of records) {
       const word = (record.word || record.Chinese || record.chinese || '').trim();
-      if (!word || seenWords.has(word)) continue;
+      if (!word) continue;
 
-      seenWords.add(word);
+      const partOfSpeech = (
+        record.partOfSpeech ||
+        record.part_of_speech ||
+        record.pos ||
+        record.type ||
+        record['Từ loại'] ||
+        ''
+      ).trim();
+
+      const key = this.makeKey(word, partOfSpeech);
+      if (seenKeys.has(key)) continue;
+
+      seenKeys.add(key);
+      uniqueWords.add(word);
       const meaning = (record.meaning || record.Meaning || record.vietnamese || word).trim();
       const pinyinInput = (record.pinyin || record.Pinyin || '').trim();
       const level = (record.level || record.Level || 'HSK1').trim();
@@ -213,6 +301,7 @@ export class VocabularyService {
       parsedItems.push({
         word,
         meaning,
+        partOfSpeech,
         pinyin: pinyinValue,
         level,
       });
@@ -222,14 +311,10 @@ export class VocabularyService {
       return { message: 'File CSV không chứa từ vựng hợp lệ.', count: 0, skippedCount: 0 };
     }
 
-    // Lọc các từ đã tồn tại trong DB
-    const existingVocabs = await this.prisma.vocabulary.findMany({
-      where: { word: { in: Array.from(seenWords) } },
-      select: { word: true },
-    });
-    const existingWordSet = new Set(existingVocabs.map((v) => v.word));
-
-    const newItems = parsedItems.filter((item) => !existingWordSet.has(item.word));
+    const existingKeySet = await this.findExistingKeySet(Array.from(uniqueWords));
+    const newItems = parsedItems.filter(
+      (item) => !existingKeySet.has(this.makeKey(item.word, item.partOfSpeech)),
+    );
     const skippedCount = parsedItems.length - newItems.length;
 
     if (newItems.length > 0) {
@@ -254,11 +339,35 @@ export class VocabularyService {
    * Cập nhật thông tin từ vựng
    */
   async update(id: string, dto: UpdateVocabularyDto) {
-    await this.findOne(id); // Kiểm tra tồn tại
+    const current = await this.findOne(id); // Kiểm tra tồn tại
+
+    const nextWord = dto.word !== undefined ? dto.word.trim() : current.word;
+    const nextPos =
+      dto.partOfSpeech !== undefined ? dto.partOfSpeech.trim() : current.partOfSpeech;
+
+    if (nextWord !== current.word || nextPos !== current.partOfSpeech) {
+      const duplicate = await this.prisma.vocabulary.findUnique({
+        where: {
+          word_partOfSpeech: {
+            word: nextWord,
+            partOfSpeech: nextPos,
+          },
+        },
+      });
+      if (duplicate && duplicate.id !== id) {
+        const posLabel = nextPos || 'Chưa phân loại';
+        throw new BadRequestException(
+          `Từ vựng "${nextWord}" (${posLabel}) đã tồn tại trong hệ thống.`,
+        );
+      }
+    }
 
     const data: any = { ...dto };
+    if (dto.word !== undefined) data.word = nextWord;
+    if (dto.meaning !== undefined) data.meaning = dto.meaning.trim();
+    if (dto.partOfSpeech !== undefined) data.partOfSpeech = nextPos;
     if (dto.word && !dto.pinyin) {
-      data.pinyin = this.pinyinService.generatePinyin(dto.word);
+      data.pinyin = this.pinyinService.generatePinyin(nextWord);
     }
 
     return this.prisma.vocabulary.update({

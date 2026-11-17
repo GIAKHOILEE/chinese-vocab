@@ -15,5 +15,9 @@ export class UpdateVocabularyDto {
 
   @IsOptional()
   @IsString()
+  partOfSpeech?: string;
+
+  @IsOptional()
+  @IsString()
   level?: string;
 }

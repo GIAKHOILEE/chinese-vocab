@@ -10,6 +10,10 @@ export class BulkPasteDto {
   @IsOptional()
   @IsString()
   defaultLevel?: string;
+
+  @IsOptional()
+  @IsString()
+  defaultPartOfSpeech?: string;
 }
 
 export class BulkVocabularyDto {
