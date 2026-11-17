@@ -7,11 +7,15 @@ import { HSK2_GRAMMAR_DATA } from './data/hsk2-grammar.data';
 
 @Injectable()
 export class CurriculumService {
+  private readonly wordTopicMap: Map<string, string>;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly geminiService: GeminiService,
     private readonly pinyinService: PinyinService,
-  ) {}
+  ) {
+    this.wordTopicMap = new Map(HSK2_VOCAB_DATA.map((item) => [item.word.trim(), item.topic]));
+  }
 
   private parseJsonSafe<T>(raw: string): T {
     const cleaned = raw
@@ -253,7 +257,7 @@ Yêu cầu:
     };
   }
 
-  async getTodayPlan() {
+  async getTodayPlan(requestedTopic?: string) {
     const profile = await this.getOrCreateProfile();
     const now = new Date();
 
@@ -303,16 +307,47 @@ Yêu cầu:
       reviewList = [...reviewList, ...extraOld];
     }
 
-    // 2. Chặng 2: Từ mới HSK 2 (3.0) hôm nay
-    const newHsk2Words = await this.prisma.vocabulary.findMany({
+    // 2. Chặng 2: Gom từ mới HSK 2 (3.0) theo chủ đề để dễ tạo hội thoại & nhớ sâu
+    const allNewHsk2 = await this.prisma.vocabulary.findMany({
       where: {
         level: 'HSK2',
         progress: { status: 'new' },
       },
       include: { progress: true },
       orderBy: { createdAt: 'asc' },
-      take: profile.newWordsPerDay,
     });
+
+    const topicGroups = new Map<string, typeof allNewHsk2>();
+    for (const w of allNewHsk2) {
+      const topic = this.wordTopicMap.get(w.word.trim()) || 'Từ vựng cá nhân & Mở rộng';
+      const arr = topicGroups.get(topic) || [];
+      arr.push(w);
+      topicGroups.set(topic, arr);
+    }
+
+    const availableTopics = Array.from(topicGroups.entries()).map(([topic, words]) => ({
+      topic,
+      remainingCount: words.length,
+    }));
+
+    // Chọn chủ đề: ưu tiên chủ đề người dùng chọn, hoặc chủ đề đầu tiên có từ
+    let selectedTopic = requestedTopic && topicGroups.has(requestedTopic)
+      ? requestedTopic
+      : availableTopics[0]?.topic || 'Giao tiếp & Cảm xúc';
+
+    let selectedNewWords = (topicGroups.get(selectedTopic) || []).slice(0, profile.newWordsPerDay);
+
+    // Nếu chủ đề hiện tại còn ít hơn số từ mục tiêu, gom thêm từ chủ đề kế tiếp để đủ buổi học
+    if (selectedNewWords.length < profile.newWordsPerDay && allNewHsk2.length > selectedNewWords.length) {
+      const pickedIds = new Set(selectedNewWords.map((w) => w.id));
+      const extras = allNewHsk2.filter((w) => !pickedIds.has(w.id)).slice(0, profile.newWordsPerDay - selectedNewWords.length);
+      selectedNewWords = [...selectedNewWords, ...extras];
+    }
+
+    const newHsk2WordsWithTopic = selectedNewWords.map((w) => ({
+      ...w,
+      topic: this.wordTopicMap.get(w.word.trim()) || 'Từ vựng cá nhân & Mở rộng',
+    }));
 
     // 3. Chặng 3: Ngữ pháp trọng tâm hôm nay
     const grammarPoints = await this.prisma.grammarPoint.findMany({
@@ -332,9 +367,114 @@ Yêu cầu:
     return {
       profile,
       schedule,
+      currentTopic: selectedTopic,
+      availableTopics,
       reviewWords: reviewList,
-      newWords: newHsk2Words,
+      newWords: newHsk2WordsWithTopic,
       grammarPoints,
+    };
+  }
+
+  async generateTopicDialogue(body: {
+    newWordIds: string[];
+    oldWordIds?: string[];
+    topic?: string;
+    model?: string;
+  }) {
+    const [newWords, passedOldWords, extraHsk1] = await Promise.all([
+      this.prisma.vocabulary.findMany({ where: { id: { in: body.newWordIds || [] } } }),
+      body.oldWordIds?.length
+        ? this.prisma.vocabulary.findMany({ where: { id: { in: body.oldWordIds } } })
+        : Promise.resolve([]),
+      this.prisma.vocabulary.findMany({
+        where: { level: 'HSK1' },
+        take: 35,
+        orderBy: { updatedAt: 'desc' },
+      }),
+    ]);
+
+    if (newWords.length === 0) {
+      throw new BadRequestException('Không có từ mới nào để tạo hội thoại.');
+    }
+
+    const oldMap = new Map<string, { word: string; meaning: string }>();
+    for (const w of [...passedOldWords, ...extraHsk1]) {
+      oldMap.set(w.word, { word: w.word, meaning: w.meaning });
+    }
+
+    const newListStr = newWords.map((w) => `${w.word} (${w.meaning})`).join(', ');
+    const oldListStr = Array.from(oldMap.values())
+      .slice(0, 35)
+      .map((w) => `${w.word} (${w.meaning})`)
+      .join(', ');
+
+    const prompt = `Bạn là giáo viên tiếng Trung HSK 2 (3.0) xuất sắc cho người Việt.
+Học viên đang học nhóm từ mới theo chủ đề **"${body.topic || 'Giao tiếp hàng ngày'}"**:
+- Từ mới hôm nay (CẦN ĐƯA VÀO TỐI ĐA): [${newListStr}]
+- Từ cũ đã học (TÁI SỬ DỤNG THOẢI MÁI & LẶP LẠI NHIỀU ĐỂ NHỚ SÂU): [${oldListStr}]
+
+Hãy tạo:
+1. Một đoạn hội thoại ngắn, tự nhiên, sinh động (6 đến 10 câu thoại giữa 2 người A và B) xoay quanh chủ đề này, lồng ghép khéo léo các từ mới hôm nay VÀ lặp lại nhiều lần các từ cũ đã học để học viên dễ nhớ, dễ vào đầu.
+2. 4 mẫu câu giao tiếp ngắn gọn (keySentences) kết hợp từ mới + từ cũ để học viên đọc to và ghi nhớ ngay.
+3. Giải thích ngắn gọn cách các từ mới hôm nay liên kết với nhau trong tình huống này.
+
+Trả về STRICT JSON:
+{
+  "dialogueTitle": "Tên đoạn hội thoại tiếng Việt hấp dẫn",
+  "context": "Mô tả bối cảnh 1-2 câu bằng tiếng Việt",
+  "topicConnectionNote": "Giải thích ngắn gọn cách nhóm từ mới này gắn với chủ đề để dễ nhớ cả cụm",
+  "dialogue": [
+    {
+      "speaker": "A",
+      "chinese": "Câu tiếng Trung tự nhiên",
+      "vietnamese": "Nghĩa tiếng Việt",
+      "usedNewWords": ["từ mới xuất hiện trong câu"]
+    }
+  ],
+  "keySentences": [
+    {
+      "chinese": "Mẫu câu ngắn dễ nhớ",
+      "vietnamese": "Nghĩa tiếng Việt",
+      "usedWords": ["từ mới", "từ cũ"]
+    }
+  ]
+}`;
+
+    const raw = await this.geminiService.generateText(prompt, {
+      model: body.model,
+      systemInstruction: 'You are a Chinese HSK 2 conversation & vocabulary coach. Output valid JSON only.',
+      temperature: 0.45,
+    });
+
+    const parsed = this.parseJsonSafe<{
+      dialogueTitle: string;
+      context: string;
+      topicConnectionNote: string;
+      dialogue: Array<{
+        speaker: string;
+        chinese: string;
+        vietnamese: string;
+        usedNewWords: string[];
+      }>;
+      keySentences: Array<{
+        chinese: string;
+        vietnamese: string;
+        usedWords: string[];
+      }>;
+    }>(raw);
+
+    return {
+      dialogueTitle: parsed.dialogueTitle,
+      context: parsed.context,
+      topicConnectionNote: parsed.topicConnectionNote,
+      dialogue: (parsed.dialogue || []).map((line) => ({
+        ...line,
+        pinyin: this.pinyinService.generatePinyin(line.chinese),
+      })),
+      keySentences: (parsed.keySentences || []).map((s) => ({
+        ...s,
+        pinyin: this.pinyinService.generatePinyin(s.chinese),
+      })),
     };
   }
 
@@ -527,8 +667,8 @@ Trả về STRICT JSON với cấu trúc:
 - Ngữ pháp trọng tâm hôm nay: [${grammarText || 'Câu giao tiếp HSK 2'}]
 
 Yêu cầu tạo:
-1. 6 câu dịch Việt -> Trung: Mỗi câu PHẢI kết hợp khéo léo ít nhất 1-2 từ mới hôm nay + 1-2 từ cũ cần ôn + áp dụng ngữ pháp trọng tâm (nếu phù hợp). Câu tự nhiên, gần gũi đời sống.
-2. 2 đề bài đặt câu tự do (freePrompts): Cho sẵn 2-3 từ khóa (gồm cả từ mới + từ cũ) và yêu cầu đặt 1 câu hoàn chỉnh theo ngữ pháp hôm nay.
+1. 15 câu dịch Việt -> Trung: Mỗi câu PHẢI kết hợp khéo léo ít nhất 1-2 từ mới hôm nay + 1-2 từ cũ cần ôn + áp dụng ngữ pháp trọng tâm (nếu phù hợp). Câu đa dạng tình huống đời sống, đi từ ngắn dễ đến vừa phải.
+2. 3 đề bài đặt câu tự do (freePrompts): Cho sẵn 2-3 từ khóa (gồm cả từ mới + từ cũ) và yêu cầu đặt 1 câu hoàn chỉnh theo ngữ pháp hôm nay.
 
 Trả về STRICT JSON:
 {
@@ -643,6 +783,97 @@ Trả về STRICT JSON:
     return {
       ...parsed,
       correctedPinyin: this.pinyinService.generatePinyin(parsed.correctedChinese || body.userChinese),
+    };
+  }
+
+  async evaluateBatch(body: {
+    items: Array<{
+      key: string;
+      promptVietnamese: string;
+      referenceChinese?: string;
+      targetWords?: string[];
+      grammarTitle?: string;
+      userChinese: string;
+    }>;
+    model?: string;
+  }) {
+    const validItems = (body.items || []).filter((i) => i.userChinese && i.userChinese.trim());
+    if (validItems.length === 0) {
+      throw new BadRequestException('Vui lòng viết ít nhất 1 câu tiếng Trung trước khi chấm bài.');
+    }
+
+    const itemsText = validItems
+      .map(
+        (item, idx) =>
+          `${idx + 1}. [key="${item.key}"] Đề: "${item.promptVietnamese}" | Mục tiêu: [${(item.targetWords || []).join(', ')}] | Ngữ pháp: "${item.grammarTitle || ''}" | Học viên viết: "${item.userChinese.trim()}"`,
+      )
+      .join('\n');
+
+    const prompt = `Bạn là gia sư tiếng Trung 1 kèm 1 cho học viên người Việt học HSK 2 (3.0).
+Hãy chấm điểm và nhận xét CÁ NHÂN HÓA TẤT CẢ ${validItems.length} câu sau trong một lần:
+${itemsText}
+
+Trả về STRICT JSON:
+{
+  "overallScore": 85,
+  "overallComment": "Nhận xét tổng quan 2-3 câu về điểm mạnh, lỗi hệ thống hay gặp trong bài làm này và lời khuyên cá nhân hóa",
+  "results": [
+    {
+      "key": "đúng key ở trên",
+      "score": 85,
+      "isCorrect": true,
+      "correctedChinese": "Câu tiếng Trung chuẩn/tự nhiên nhất",
+      "grammarFeedback": "Nhận xét ngắn gọn ngữ pháp",
+      "vocabFeedback": "Nhận xét ngắn gọn từ vựng",
+      "personalizedTip": "1 mẹo nhớ ngắn cho câu này",
+      "weakWordsDetected": ["từ dùng sai nếu có"]
+    }
+  ]
+}`;
+
+    const raw = await this.geminiService.generateText(prompt, {
+      model: body.model,
+      systemInstruction: 'You are a supportive 1-on-1 Chinese tutor grading a batch of exercises. Output valid JSON only.',
+      temperature: 0.3,
+    });
+
+    const parsed = this.parseJsonSafe<{
+      overallScore: number;
+      overallComment: string;
+      results: Array<{
+        key: string;
+        score: number;
+        isCorrect: boolean;
+        correctedChinese: string;
+        grammarFeedback: string;
+        vocabFeedback: string;
+        personalizedTip: string;
+        weakWordsDetected?: string[];
+      }>;
+    }>(raw);
+
+    const allWeakWords = new Set<string>();
+    const enrichedResults = (parsed.results || []).map((r) => {
+      for (const w of r.weakWordsDetected || []) {
+        allWeakWords.add(w);
+      }
+      return {
+        ...r,
+        correctedPinyin: this.pinyinService.generatePinyin(r.correctedChinese || ''),
+      };
+    });
+
+    if (allWeakWords.size > 0) {
+      await this.prisma.vocabProgress.updateMany({
+        where: { vocabulary: { word: { in: Array.from(allWeakWords) } } },
+        data: { lastMistakeNote: parsed.overallComment },
+      });
+    }
+
+    return {
+      overallScore: parsed.overallScore,
+      overallComment: parsed.overallComment,
+      results: enrichedResults,
     };
   }
 

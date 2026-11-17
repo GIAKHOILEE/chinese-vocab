@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { CurriculumService } from './curriculum.service';
 
 @Controller('curriculum')
@@ -11,8 +11,15 @@ export class CurriculumController {
   }
 
   @Get('today')
-  getTodayPlan() {
-    return this.curriculumService.getTodayPlan();
+  getTodayPlan(@Query('topic') topic?: string) {
+    return this.curriculumService.getTodayPlan(topic);
+  }
+
+  @Post('topic-dialogue')
+  generateTopicDialogue(
+    @Body() body: { newWordIds: string[]; oldWordIds?: string[]; topic?: string; model?: string },
+  ) {
+    return this.curriculumService.generateTopicDialogue(body);
   }
 
   @Patch('profile')
@@ -69,6 +76,24 @@ export class CurriculumController {
     },
   ) {
     return this.curriculumService.evaluateAttempt(body);
+  }
+
+  @Post('evaluate-batch')
+  evaluateBatch(
+    @Body()
+    body: {
+      items: Array<{
+        key: string;
+        promptVietnamese: string;
+        referenceChinese?: string;
+        targetWords?: string[];
+        grammarTitle?: string;
+        userChinese: string;
+      }>;
+      model?: string;
+    },
+  ) {
+    return this.curriculumService.evaluateBatch(body);
   }
 
   @Post('complete-day')

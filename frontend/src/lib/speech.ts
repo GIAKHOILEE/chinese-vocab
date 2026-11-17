@@ -107,6 +107,30 @@ export function speakChinese(text: string, options: SpeakOptions = {}): void {
 }
 
 /**
+ * Đọc văn bản tiếng Anh bằng Web Speech API (en-US)
+ */
+export function speakEnglish(text: string, options: SpeakOptions = {}): void {
+  if (!isSpeechSupported() || !text?.trim()) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text.trim());
+  utterance.lang = 'en-US';
+  utterance.rate = options.rate ?? 0.9;
+  utterance.pitch = options.pitch ?? 1.0;
+
+  const voices = loadVoices();
+  const enVoice =
+    voices.find((v) => v.lang.toLowerCase() === 'en-us') ||
+    voices.find((v) => v.lang.toLowerCase().startsWith('en'));
+  if (enVoice) {
+    utterance.voice = enVoice;
+  }
+
+  if (options.onStart) utterance.onstart = () => options.onStart?.();
+  if (options.onEnd) utterance.onend = () => options.onEnd?.();
+  window.speechSynthesis.speak(utterance);
+}
+
+/**
  * Dừng phát âm ngay lập tức
  */
 export function stopSpeaking(): void {

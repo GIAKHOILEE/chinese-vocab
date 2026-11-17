@@ -92,6 +92,82 @@ model StudyLog {
   createdAt          DateTime @default(now())
 }
 
+// ==================== HỆ THỐNG HỌC TIẾNG ANH (A1 -> B2) ====================
+
+model EnglishVocab {
+  id              String    @id @default(uuid())
+  word            String    @unique
+  ipa             String?
+  meaning         String
+  partOfSpeech    String    @default("")
+  cefrLevel       String    @default("A1") // A1 | A2 | B1 | B2
+  topic           String    @default("Daily Life")
+  exampleEn       String?
+  exampleVi       String?
+  status          String    @default("new") // new | learning | review | mastered
+  srsLevel        Int       @default(0)
+  intervalDays    Float     @default(0)
+  easeFactor      Float     @default(2.5)
+  nextReviewAt    DateTime  @default(now())
+  lastReviewedAt  DateTime?
+  reviewCount     Int       @default(0)
+  correctCount    Int       @default(0)
+  wrongCount      Int       @default(0)
+  aiDeepDive      Json?
+  lastMistakeNote String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([cefrLevel])
+  @@index([status])
+  @@index([nextReviewAt])
+}
+
+model EnglishGrammar {
+  id              String    @id @default(uuid())
+  cefrLevel       String    @default("A1") // A1 | A2 | B1 | B2
+  orderIndex      Int       @default(1)
+  title           String    @unique
+  pattern         String
+  explanation     String
+  commonMistakes  String?
+  examples        Json
+  status          String    @default("new") // new | learning | mastered
+  practiceCount   Int       @default(0)
+  lastPracticedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([cefrLevel])
+}
+
+model EnglishProfile {
+  id                 String   @id @default("default")
+  currentLevel       String   @default("A1") // A1 | A2 | B1 | B2
+  placementDone      Boolean  @default(false)
+  placementScore     Int?
+  dailyMinutesTarget Int      @default(60)
+  newWordsPerDay     Int      @default(12)
+  reviewWordsPerDay  Int      @default(20)
+  grammarPerDay      Int      @default(1)
+  preferredModel     String   @default("gemini-2.5-flash")
+  currentDayNumber   Int      @default(1)
+  updatedAt          DateTime @updatedAt
+}
+
+model EnglishStudyLog {
+  id                 String   @id @default(uuid())
+  date               String
+  dayNumber          Int      @default(1)
+  level              String   @default("A1")
+  minutesSpent       Int      @default(0)
+  newWordsLearned    Int      @default(0)
+  wordsReviewed      Int      @default(0)
+  score              Int?
+  aiCoachingFeedback Json?
+  createdAt          DateTime @default(now())
+}
+
 // Bảng lưu trữ bộ bài tập luyện viết
 model PracticeSet {
   id            String     @id @default(uuid())

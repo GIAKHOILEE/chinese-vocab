@@ -60,9 +60,30 @@ interface TodayPlan {
     grammarMinutes: number;
     mixedPracticeMinutes: number;
   };
+  currentTopic?: string;
+  availableTopics?: Array<{ topic: string; remainingCount: number }>;
   reviewWords: VocabItem[];
-  newWords: VocabItem[];
+  newWords: (VocabItem & { topic?: string })[];
   grammarPoints: GrammarItem[];
+}
+
+interface TopicDialogue {
+  dialogueTitle: string;
+  context: string;
+  topicConnectionNote: string;
+  dialogue: Array<{
+    speaker: string;
+    chinese: string;
+    pinyin: string;
+    vietnamese: string;
+    usedNewWords: string[];
+  }>;
+  keySentences: Array<{
+    chinese: string;
+    pinyin: string;
+    vietnamese: string;
+    usedWords: string[];
+  }>;
 }
 
 interface DeepDiveResult {
@@ -127,6 +148,9 @@ export default function StudyPage() {
   const [learnedNewIds, setLearnedNewIds] = useState<Set<string>>(new Set());
   const [deepDives, setDeepDives] = useState<Record<string, DeepDiveResult>>({});
   const [loadingDeepDiveId, setLoadingDeepDiveId] = useState<string | null>(null);
+  const [topicDialogue, setTopicDialogue] = useState<TopicDialogue | null>(null);
+  const [generatingDialogue, setGeneratingDialogue] = useState(false);
+  const [showDialogueHelper, setShowDialogueHelper] = useState(true);
 
   // Phase 3: Grammar state
   const [grammarDoneIds, setGrammarDoneIds] = useState<Set<string>>(new Set());
@@ -137,14 +161,18 @@ export default function StudyPage() {
   const [userInputs, setUserInputs] = useState<Record<string, string>>({});
   const [evaluations, setEvaluations] = useState<Record<string, EvaluationResult>>({});
   const [evaluatingKey, setEvaluatingKey] = useState<string | null>(null);
+  const [batchGrading, setBatchGrading] = useState(false);
+  const [batchSummary, setBatchSummary] = useState<{ overallScore: number; overallComment: string } | null>(null);
   const [completingDay, setCompletingDay] = useState(false);
   const [dailyCoachResult, setDailyCoachResult] = useState<any>(null);
 
-  async function loadPlan() {
+  async function loadPlan(topic?: string) {
     setLoading(true);
     try {
-      const data = await fetchApi<TodayPlan>('/curriculum/today');
+      const qs = topic ? `?topic=${encodeURIComponent(topic)}` : '';
+      const data = await fetchApi<TodayPlan>(`/curriculum/today${qs}`);
       setPlan(data);
+      setTopicDialogue(null);
       if (data.profile?.preferredModel) {
         setSelectedModel(data.profile.preferredModel);
       }
@@ -152,6 +180,28 @@ export default function StudyPage() {
       setBannerMsg(err.message || 'Không thể tải lộ trình học hôm nay.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGenerateTopicDialogue() {
+    if (!plan || plan.newWords.length === 0) return;
+    setGeneratingDialogue(true);
+    setBannerMsg(null);
+    try {
+      const res = await fetchApi<TopicDialogue>('/curriculum/topic-dialogue', {
+        method: 'POST',
+        body: JSON.stringify({
+          newWordIds: plan.newWords.map((w) => w.id),
+          oldWordIds: plan.reviewWords.map((w) => w.id),
+          topic: plan.currentTopic,
+          model: selectedModel,
+        }),
+      });
+      setTopicDialogue(res);
+    } catch (err: any) {
+      setBannerMsg(err.message);
+    } finally {
+      setGeneratingDialogue(false);
     }
   }
 
@@ -293,10 +343,82 @@ export default function StudyPage() {
         }),
       });
       setMixedData(res);
+      setEvaluations({});
+      setBatchSummary(null);
     } catch (err: any) {
       setBannerMsg(err.message);
     } finally {
       setGeneratingMixed(false);
+    }
+  }
+
+  async function handleEvaluateAll() {
+    if (!mixedData) return;
+    const items: Array<{
+      key: string;
+      promptVietnamese: string;
+      referenceChinese?: string;
+      targetWords?: string[];
+      grammarTitle?: string;
+      userChinese: string;
+    }> = [];
+
+    mixedData.translationExercises.forEach((ex, i) => {
+      const key = `tr-${i}`;
+      const val = userInputs[key]?.trim();
+      if (val) {
+        items.push({
+          key,
+          promptVietnamese: ex.vietnamese,
+          referenceChinese: ex.referenceChinese,
+          targetWords: ex.targetWords,
+          grammarTitle: ex.grammarHint,
+          userChinese: val,
+        });
+      }
+    });
+
+    mixedData.freePrompts.forEach((fp, i) => {
+      const key = `fp-${i}`;
+      const val = userInputs[key]?.trim();
+      if (val) {
+        items.push({
+          key,
+          promptVietnamese: fp.instruction,
+          targetWords: fp.targetWords,
+          grammarTitle: fp.grammarTitle,
+          userChinese: val,
+        });
+      }
+    });
+
+    if (items.length === 0) {
+      setBannerMsg('Bạn hãy viết ít nhất 1 câu tiếng Trung trước khi bấm chấm bài nhé!');
+      return;
+    }
+
+    setBatchGrading(true);
+    setBannerMsg(null);
+    try {
+      const res = await fetchApi<{
+        overallScore: number;
+        overallComment: string;
+        results: Array<EvaluationResult & { key: string }>;
+      }>('/curriculum/evaluate-batch', {
+        method: 'POST',
+        body: JSON.stringify({ items, model: selectedModel }),
+      });
+
+      const nextMap: Record<string, EvaluationResult> = {};
+      for (const r of res.results || []) {
+        nextMap[r.key] = r;
+      }
+      setEvaluations(nextMap);
+      setBatchSummary({ overallScore: res.overallScore, overallComment: res.overallComment });
+    } catch (err: any) {
+      setBannerMsg(err.message);
+    } finally {
+      setBatchGrading(false);
     }
   }
 
@@ -619,23 +741,173 @@ export default function StudyPage() {
       {/* CHẶNG 2: HỌC HIỂU TỪ MỚI HSK 2 (3.0) */}
       {activePhase === 2 && (
         <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center justify-between">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-slate-800">
-                Chặng 2: Học hiểu {plan.newWords.length} từ mới HSK 2 (3.0) hôm nay
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Bấm &quot;Phân tích nhớ sâu (AI)&quot; để xem bộ thủ, mẹo nhớ, cụm từ đi kèm và câu ví dụ.
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg font-bold text-slate-800">
+                  Chặng 2: Học hiểu {plan.newWords.length} từ mới HSK 2 (3.0) theo chủ đề
+                </h2>
+                {plan.currentTopic && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-semibold">
+                    {plan.currentTopic}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Các từ mới được gom theo cùng chủ đề để dễ tạo hội thoại & tái sử dụng từ cũ lặp lại nhiều lần cho dễ nhớ.
               </p>
             </div>
-            <button
-              onClick={() => setActivePhase(3)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium"
-            >
-              <span>Sang Chặng 3</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              {plan.availableTopics && plan.availableTopics.length > 0 && (
+                <select
+                  value={plan.currentTopic || ''}
+                  onChange={(e) => loadPlan(e.target.value)}
+                  className="border border-slate-200 rounded-lg px-2.5 py-2 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {plan.availableTopics.map((t) => (
+                    <option key={t.topic} value={t.topic}>
+                      {t.topic} ({t.remainingCount} từ)
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                onClick={() => setActivePhase(3)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium"
+              >
+                <span>Sang Chặng 3</span>
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+
+          {/* Hội thoại & Mẫu câu gắn kết từ mới + từ cũ */}
+          {plan.newWords.length > 0 && (
+            <div className="bg-gradient-to-br from-indigo-50 to-slate-50 rounded-xl border border-indigo-200 shadow-sm p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-bold text-indigo-950 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                    <span>Hội thoại & Mẫu câu theo chủ đề (Từ mới + Từ cũ)</span>
+                  </h3>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    Đọc & nghe đoạn hội thoại lồng ghép {plan.newWords.length} từ mới hôm nay cùng các từ cũ đã học để nhớ sâu tự nhiên.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {topicDialogue && (
+                    <button
+                      onClick={() => setShowDialogueHelper((v) => !v)}
+                      className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                    >
+                      {showDialogueHelper ? 'Ẩn Pinyin & Nghĩa' : 'Hiện Pinyin & Nghĩa'}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleGenerateTopicDialogue}
+                    disabled={generatingDialogue}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-semibold transition disabled:opacity-50"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>
+                      {generatingDialogue
+                        ? 'AI đang tạo hội thoại...'
+                        : topicDialogue
+                          ? 'Tạo hội thoại khác'
+                          : 'Tạo hội thoại & mẫu câu (AI)'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {topicDialogue && (
+                <div className="space-y-4 pt-2 border-t border-indigo-200/70">
+                  <div className="bg-white rounded-lg p-4 border border-indigo-100 space-y-1.5">
+                    <div className="font-bold text-slate-900 text-base">{topicDialogue.dialogueTitle}</div>
+                    <p className="text-xs text-slate-600">{topicDialogue.context}</p>
+                    {topicDialogue.topicConnectionNote && (
+                      <p className="text-xs text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded mt-1">
+                        <strong>Mẹo liên kết cụm từ:</strong> {topicDialogue.topicConnectionNote}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Đoạn hội thoại */}
+                  <div className="space-y-2">
+                    {topicDialogue.dialogue.map((line, idx) => (
+                      <div
+                        key={idx}
+                        className="bg-white rounded-lg p-3.5 border border-slate-200 flex items-start justify-between gap-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="px-2 py-0.5 rounded bg-indigo-600 text-white text-xs font-bold">
+                              {line.speaker}
+                            </span>
+                            <span className="text-base font-semibold text-slate-900 font-chinese">
+                              {line.chinese}
+                            </span>
+                            {line.usedNewWords?.length > 0 && (
+                              <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                Từ mới: {line.usedNewWords.join(', ')}
+                              </span>
+                            )}
+                          </div>
+                          {showDialogueHelper && (
+                            <>
+                              <div className="text-xs text-indigo-600 font-medium">{line.pinyin}</div>
+                              <div className="text-xs text-slate-600">{line.vietnamese}</div>
+                            </>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => speakChinese(line.chinese)}
+                          className="p-2 rounded-full bg-slate-50 border border-slate-200 hover:bg-indigo-50 text-indigo-600 shrink-0"
+                          title="Nghe câu thoại"
+                        >
+                          <Volume2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Mẫu câu ngắn dễ nhớ */}
+                  {topicDialogue.keySentences?.length > 0 && (
+                    <div className="bg-white rounded-lg p-4 border border-slate-200 space-y-2.5">
+                      <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Mẫu câu giao tiếp ngắn (Lặp lại từ mới + từ cũ)
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {topicDialogue.keySentences.map((s, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-start justify-between gap-2"
+                          >
+                            <div className="space-y-0.5">
+                              <div className="font-semibold text-slate-900 text-sm">{s.chinese}</div>
+                              {showDialogueHelper && (
+                                <>
+                                  <div className="text-xs text-indigo-600">{s.pinyin}</div>
+                                  <div className="text-xs text-slate-600">{s.vietnamese}</div>
+                                </>
+                              )}
+                            </div>
+                            <button
+                              onClick={() => speakChinese(s.chinese)}
+                              className="p-1.5 rounded-full bg-white border border-slate-200 text-indigo-600 hover:bg-indigo-50 shrink-0"
+                            >
+                              <Volume2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {plan.newWords.length === 0 ? (
             <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-500">
@@ -855,6 +1127,16 @@ export default function StudyPage() {
 
           {mixedData && (
             <div className="space-y-4">
+              {batchSummary && (
+                <div className="bg-indigo-600 text-white rounded-xl p-5 shadow-sm space-y-1.5">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-indigo-100">
+                    Kết quả chấm toàn bài (1 lần gọi AI)
+                  </div>
+                  <div className="text-2xl font-extrabold">Điểm tổng: {batchSummary.overallScore}/100</div>
+                  <p className="text-sm text-indigo-50">{batchSummary.overallComment}</p>
+                </div>
+              )}
+
               {mixedData.translationExercises.map((ex, i) => {
                 const key = `tr-${i}`;
                 const evalRes = evaluations[key];
@@ -870,24 +1152,13 @@ export default function StudyPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="text"
-                        value={userInputs[key] || ''}
-                        onChange={(e) => setUserInputs((p) => ({ ...p, [key]: e.target.value }))}
-                        placeholder="Nhập câu tiếng Trung bạn viết..."
-                        className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                      <button
-                        onClick={() =>
-                          handleEvaluate(key, ex.vietnamese, ex.referenceChinese, ex.targetWords, ex.grammarHint)
-                        }
-                        disabled={evaluatingKey === key || !userInputs[key]?.trim()}
-                        className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-indigo-600 text-white text-xs font-semibold transition disabled:opacity-50"
-                      >
-                        {evaluatingKey === key ? 'Đang chấm...' : 'AI Đánh giá'}
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      value={userInputs[key] || ''}
+                      onChange={(e) => setUserInputs((p) => ({ ...p, [key]: e.target.value }))}
+                      placeholder="Nhập câu tiếng Trung bạn viết..."
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
 
                     {evalRes && (
                       <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2 text-xs">
@@ -917,7 +1188,6 @@ export default function StudyPage() {
                         </div>
                         <div><strong>Ngữ pháp:</strong> {evalRes.grammarFeedback}</div>
                         <div><strong>Từ vựng:</strong> {evalRes.vocabFeedback}</div>
-                        <div><strong>Độ tự nhiên:</strong> {evalRes.naturalnessFeedback}</div>
                         <div className="p-2 rounded bg-indigo-50 text-indigo-900">
                           <strong>Mẹo cá nhân hóa:</strong> {evalRes.personalizedTip}
                         </div>
@@ -939,24 +1209,13 @@ export default function StudyPage() {
                         Từ bắt buộc: {fp.targetWords.join(', ')} • Ngữ pháp: {fp.grammarTitle}
                       </div>
                     </div>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="text"
-                        value={userInputs[key] || ''}
-                        onChange={(e) => setUserInputs((p) => ({ ...p, [key]: e.target.value }))}
-                        placeholder="Tự đặt câu tiếng Trung của bạn..."
-                        className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      />
-                      <button
-                        onClick={() =>
-                          handleEvaluate(key, fp.instruction, undefined, fp.targetWords, fp.grammarTitle)
-                        }
-                        disabled={evaluatingKey === key || !userInputs[key]?.trim()}
-                        className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition disabled:opacity-50"
-                      >
-                        {evaluatingKey === key ? 'Đang chấm...' : 'AI Chấm câu'}
-                      </button>
-                    </div>
+                    <input
+                      type="text"
+                      value={userInputs[key] || ''}
+                      onChange={(e) => setUserInputs((p) => ({ ...p, [key]: e.target.value }))}
+                      placeholder="Tự đặt câu tiếng Trung của bạn..."
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
                     {evalRes && (
                       <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2 text-xs">
                         <div className="font-bold text-indigo-700">
@@ -972,6 +1231,25 @@ export default function StudyPage() {
                   </div>
                 );
               })}
+
+              <div className="sticky bottom-4 bg-white/95 backdrop-blur border border-indigo-200 rounded-xl p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-sm text-slate-700 font-medium">
+                  Đã viết:{' '}
+                  <span className="font-bold text-indigo-700">
+                    {Object.values(userInputs).filter((v) => v?.trim()).length} /{' '}
+                    {mixedData.translationExercises.length + mixedData.freePrompts.length}
+                  </span>{' '}
+                  câu
+                </div>
+                <button
+                  onClick={handleEvaluateAll}
+                  disabled={batchGrading}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-sm transition disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>{batchGrading ? 'AI đang chấm toàn bộ bài...' : 'AI Chấm tất cả các câu (1 lần gọi)'}</span>
+                </button>
+              </div>
             </div>
           )}
 

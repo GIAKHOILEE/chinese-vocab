@@ -1,0 +1,794 @@
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { GeminiService } from '../ai/gemini.service';
+import { ENGLISH_VOCAB_DATA } from './data/english-vocab.data';
+import { ENGLISH_GRAMMAR_DATA } from './data/english-grammar.data';
+
+const LEVEL_ORDER = ['A1', 'A2', 'B1', 'B2'] as const;
+
+export interface PlacementQuestion {
+  id: string;
+  level: 'A1' | 'A2' | 'B1' | 'B2';
+  question: string;
+  options: string[];
+  correctIndex: number;
+}
+
+const PLACEMENT_QUESTIONS: PlacementQuestion[] = [
+  // A1
+  { id: 'q1', level: 'A1', question: 'She ___ to work by bus every morning.', options: ['go', 'goes', 'going', 'is go'], correctIndex: 1 },
+  { id: 'q2', level: 'A1', question: '___ a book and two pens on my desk.', options: ['Have', 'There are', 'There is', 'It has'], correctIndex: 2 },
+  { id: 'q3', level: 'A1', question: 'Right now, they ___ English in the living room.', options: ['study', 'are studying', 'studied', 'studying'], correctIndex: 1 },
+  // A2
+  { id: 'q4', level: 'A2', question: 'Yesterday I ___ to the supermarket because I needed some fruit.', options: ['go', 'have gone', 'went', 'was go'], correctIndex: 2 },
+  { id: 'q5', level: 'A2', question: 'This train is much ___ than the old bus.', options: ['convenient', 'more convenient', 'most convenient', 'convenienter'], correctIndex: 1 },
+  { id: 'q6', level: 'A2', question: 'Look at those dark clouds! It ___ rain soon.', options: ['is going to', 'will to', 'goes to', 'was'], correctIndex: 0 },
+  // B1
+  { id: 'q7', level: 'B1', question: 'I ___ in Ho Chi Minh City since 2021.', options: ['live', 'am living', 'have lived', 'lived'], correctIndex: 2 },
+  { id: 'q8', level: 'B1', question: 'If I ___ more free time, I would practice speaking every day.', options: ['have', 'had', 'will have', 'would have'], correctIndex: 1 },
+  { id: 'q9', level: 'B1', question: 'The report ___ by the manager before the meeting started.', options: ['reviewed', 'was reviewed', 'is reviewing', 'has review'], correctIndex: 1 },
+  // B2
+  { id: 'q10', level: 'B2', question: 'She looks exhausted; she ___ all night for the presentation.', options: ['must work', 'should work', 'must have worked', 'can have worked'], correctIndex: 2 },
+  { id: 'q11', level: 'B2', question: '___ the new system, the team became significantly more efficient.', options: ['Having implemented', 'Implemented', 'To implement', 'Have implemented'], correctIndex: 0 },
+  { id: 'q12', level: 'B2', question: 'If they had negotiated more carefully, they ___ that consequence.', options: ['would avoid', 'will avoid', 'would have avoided', 'had avoided'], correctIndex: 2 },
+];
+
+@Injectable()
+export class EnglishService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly geminiService: GeminiService,
+  ) {}
+
+  private parseJsonSafe<T>(raw: string): T {
+    const cleaned = raw
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    return JSON.parse(cleaned) as T;
+  }
+
+  async getOrCreateProfile() {
+    let profile = await this.prisma.englishProfile.findUnique({ where: { id: 'default' } });
+    if (!profile) {
+      profile = await this.prisma.englishProfile.create({
+        data: {
+          id: 'default',
+          currentLevel: 'A1',
+          placementDone: false,
+          dailyMinutesTarget: 60,
+          newWordsPerDay: 12,
+          reviewWordsPerDay: 20,
+          grammarPerDay: 1,
+          preferredModel: 'gemini-2.5-flash',
+          currentDayNumber: 1,
+        },
+      });
+    }
+    return profile;
+  }
+
+  async updateProfile(data: {
+    currentLevel?: string;
+    dailyMinutesTarget?: number;
+    newWordsPerDay?: number;
+    reviewWordsPerDay?: number;
+    grammarPerDay?: number;
+    preferredModel?: string;
+  }) {
+    await this.getOrCreateProfile();
+    return this.prisma.englishProfile.update({
+      where: { id: 'default' },
+      data,
+    });
+  }
+
+  async syncCurriculum() {
+    const existingWords = await this.prisma.englishVocab.findMany({ select: { word: true } });
+    const wordSet = new Set(existingWords.map((w) => w.word.toLowerCase()));
+
+    let addedWords = 0;
+    for (const item of ENGLISH_VOCAB_DATA) {
+      if (wordSet.has(item.word.toLowerCase())) continue;
+      try {
+        await this.prisma.englishVocab.create({
+          data: {
+            word: item.word,
+            ipa: item.ipa,
+            meaning: item.meaning,
+            partOfSpeech: item.partOfSpeech,
+            cefrLevel: item.cefrLevel,
+            topic: item.topic,
+            exampleEn: item.exampleEn,
+            exampleVi: item.exampleVi,
+            status: 'new',
+          },
+        });
+        wordSet.add(item.word.toLowerCase());
+        addedWords++;
+      } catch {
+        // Skip duplicate
+      }
+    }
+
+    let addedGrammar = 0;
+    for (const g of ENGLISH_GRAMMAR_DATA) {
+      const exists = await this.prisma.englishGrammar.findUnique({ where: { title: g.title } });
+      if (!exists) {
+        await this.prisma.englishGrammar.create({
+          data: {
+            cefrLevel: g.cefrLevel,
+            orderIndex: g.orderIndex,
+            title: g.title,
+            pattern: g.pattern,
+            explanation: g.explanation,
+            commonMistakes: g.commonMistakes,
+            examples: g.examples,
+            status: 'new',
+          },
+        });
+        addedGrammar++;
+      }
+    }
+
+    return {
+      addedWords,
+      addedGrammar,
+      message: `Đã đồng bộ +${addedWords} từ vựng tiếng Anh (A1-B2) và +${addedGrammar} điểm ngữ pháp.`,
+    };
+  }
+
+  async ensureSeeded() {
+    const count = await this.prisma.englishVocab.count();
+    if (count === 0) {
+      await this.syncCurriculum();
+    }
+  }
+
+  async getSummary() {
+    await this.ensureSeeded();
+    const profile = await this.getOrCreateProfile();
+    const now = new Date();
+
+    const [byLevel, dueReviewCount, grammarTotal, grammarMastered, recentLogs] = await Promise.all([
+      this.prisma.englishVocab.groupBy({ by: ['cefrLevel'], _count: true }),
+      this.prisma.englishVocab.count({
+        where: { status: { not: 'new' }, nextReviewAt: { lte: now } },
+      }),
+      this.prisma.englishGrammar.count(),
+      this.prisma.englishGrammar.count({ where: { status: 'mastered' } }),
+      this.prisma.englishStudyLog.findMany({ orderBy: { createdAt: 'desc' }, take: 5 }),
+    ]);
+
+    const levelCounts: Record<string, number> = { A1: 0, A2: 0, B1: 0, B2: 0 };
+    for (const row of byLevel) {
+      levelCounts[row.cefrLevel] = row._count;
+    }
+
+    return {
+      profile,
+      stats: {
+        levelCounts,
+        totalWords: Object.values(levelCounts).reduce((a, b) => a + b, 0),
+        dueReviewCount,
+        grammarTotal,
+        grammarMastered,
+      },
+      recentLogs,
+    };
+  }
+
+  getPlacementTest() {
+    return {
+      questions: PLACEMENT_QUESTIONS.map(({ id, level, question, options }) => ({
+        id,
+        level,
+        question,
+        options,
+      })),
+      writingPrompts: [
+        {
+          id: 'w1',
+          levelHint: 'A1-A2',
+          vietnamese: 'Hôm qua tôi đã đi siêu thị và mua một ít hoa quả tươi.',
+        },
+        {
+          id: 'w2',
+          levelHint: 'B1-B2',
+          vietnamese: 'Nếu tôi có nhiều thời gian hơn, tôi sẽ luyện nói tiếng Anh mỗi ngày để tự tin hơn.',
+        },
+      ],
+    };
+  }
+
+  async submitPlacementTest(body: {
+    answers: Record<string, number>;
+    writingSamples?: Record<string, string>;
+    model?: string;
+  }) {
+    let correctTotal = 0;
+    const byLevel: Record<string, { correct: number; total: number }> = {
+      A1: { correct: 0, total: 0 },
+      A2: { correct: 0, total: 0 },
+      B1: { correct: 0, total: 0 },
+      B2: { correct: 0, total: 0 },
+    };
+
+    for (const q of PLACEMENT_QUESTIONS) {
+      byLevel[q.level].total++;
+      if (body.answers?.[q.id] === q.correctIndex) {
+        correctTotal++;
+        byLevel[q.level].correct++;
+      }
+    }
+
+    const scorePercent = Math.round((correctTotal / PLACEMENT_QUESTIONS.length) * 100);
+    let recommendedLevel: 'A1' | 'A2' | 'B1' | 'B2' = 'A1';
+    if (byLevel.A1.correct >= 2 && byLevel.A2.correct >= 2) {
+      recommendedLevel = 'A2';
+      if (byLevel.B1.correct >= 2) {
+        recommendedLevel = 'B1';
+        if (byLevel.B2.correct >= 2) {
+          recommendedLevel = 'B2';
+        }
+      }
+    }
+
+    let aiAssessment = `Bạn đạt ${correctTotal}/${PLACEMENT_QUESTIONS.length} câu (${scorePercent}%). Mức xuất phát phù hợp nhất là ${recommendedLevel}.`;
+    const sample1 = body.writingSamples?.w1?.trim() || '';
+    const sample2 = body.writingSamples?.w2?.trim() || '';
+
+    if (sample1 || sample2) {
+      try {
+        const prompt = `Học viên Việt Nam vừa làm bài kiểm tra đầu vào tiếng Anh (từ A1 đến B2):
+- Điểm trắc nghiệm: ${correctTotal}/${PLACEMENT_QUESTIONS.length} (${scorePercent}%)
+- Kết quả từng bậc: A1 (${byLevel.A1.correct}/3), A2 (${byLevel.A2.correct}/3), B1 (${byLevel.B1.correct}/3), B2 (${byLevel.B2.correct}/3)
+- Câu dịch 1 (A1-A2): "${sample1 || 'Bỏ trống'}"
+- Câu dịch 2 (B1-B2): "${sample2 || 'Bỏ trống'}"
+
+Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đưa ra lộ trình cá nhân hóa từ mức này lên B1-B2 bằng tiếng Việt. Trả về STRICT JSON:
+{
+  "recommendedLevel": "A1 hoặc A2 hoặc B1 hoặc B2",
+  "assessment": "Nhận xét chi tiết điểm mạnh/điểm yếu và lộ trình học phù hợp"
+}`;
+        const raw = await this.geminiService.generateText(prompt, {
+          model: body.model,
+          systemInstruction: 'You are an English CEFR placement evaluator for Vietnamese learners. Output valid JSON only.',
+          temperature: 0.3,
+        });
+        const parsed = this.parseJsonSafe<{ recommendedLevel: 'A1' | 'A2' | 'B1' | 'B2'; assessment: string }>(raw);
+        if (LEVEL_ORDER.includes(parsed.recommendedLevel)) {
+          recommendedLevel = parsed.recommendedLevel;
+        }
+        if (parsed.assessment) {
+          aiAssessment = parsed.assessment;
+        }
+      } catch {
+        // Keep heuristic assessment
+      }
+    }
+
+    await this.getOrCreateProfile();
+    await this.prisma.englishProfile.update({
+      where: { id: 'default' },
+      data: {
+        currentLevel: recommendedLevel,
+        placementDone: true,
+        placementScore: scorePercent,
+      },
+    });
+
+    return {
+      recommendedLevel,
+      scorePercent,
+      correctTotal,
+      totalQuestions: PLACEMENT_QUESTIONS.length,
+      byLevel,
+      assessment: aiAssessment,
+    };
+  }
+
+  async getTodayPlan(requestedTopic?: string, requestedLevel?: string) {
+    await this.ensureSeeded();
+    const profile = await this.getOrCreateProfile();
+    const activeLevel =
+      requestedLevel && LEVEL_ORDER.includes(requestedLevel as any)
+        ? requestedLevel
+        : profile.currentLevel;
+
+    const now = new Date();
+
+    // 1. Chặng 1: Ôn từ cũ đến hạn SRS (hoặc từ đã học lâu chưa ôn)
+    let reviewWords = await this.prisma.englishVocab.findMany({
+      where: {
+        status: { not: 'new' },
+        nextReviewAt: { lte: now },
+      },
+      orderBy: [{ wrongCount: 'desc' }, { nextReviewAt: 'asc' }],
+      take: profile.reviewWordsPerDay,
+    });
+
+    if (reviewWords.length < profile.reviewWordsPerDay) {
+      const pickedIds = reviewWords.map((r) => r.id);
+      const extra = await this.prisma.englishVocab.findMany({
+        where: {
+          id: { notIn: pickedIds },
+          status: { not: 'new' },
+        },
+        orderBy: { lastReviewedAt: 'asc' },
+        take: profile.reviewWordsPerDay - reviewWords.length,
+      });
+      reviewWords = [...reviewWords, ...extra];
+    }
+
+    // 2. Chặng 2: Gom từ mới ở trình độ hiện tại theo chủ đề
+    const allNewAtLevel = await this.prisma.englishVocab.findMany({
+      where: { cefrLevel: activeLevel, status: 'new' },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const topicGroups = new Map<string, typeof allNewAtLevel>();
+    for (const w of allNewAtLevel) {
+      const arr = topicGroups.get(w.topic) || [];
+      arr.push(w);
+      topicGroups.set(w.topic, arr);
+    }
+
+    const availableTopics = Array.from(topicGroups.entries()).map(([topic, words]) => ({
+      topic,
+      remainingCount: words.length,
+    }));
+
+    const selectedTopic =
+      requestedTopic && topicGroups.has(requestedTopic)
+        ? requestedTopic
+        : availableTopics[0]?.topic || 'Daily Life & Greetings';
+
+    let newWords = (topicGroups.get(selectedTopic) || []).slice(0, profile.newWordsPerDay);
+    if (newWords.length < profile.newWordsPerDay && allNewAtLevel.length > newWords.length) {
+      const ids = new Set(newWords.map((w) => w.id));
+      const extras = allNewAtLevel.filter((w) => !ids.has(w.id)).slice(0, profile.newWordsPerDay - newWords.length);
+      newWords = [...newWords, ...extras];
+    }
+
+    // 3. Chặng 3: Ngữ pháp theo cấp độ hiện tại
+    const grammarPoints = await this.prisma.englishGrammar.findMany({
+      where: { cefrLevel: activeLevel, status: { not: 'mastered' } },
+      orderBy: { orderIndex: 'asc' },
+      take: profile.grammarPerDay,
+    });
+
+    const total = profile.dailyMinutesTarget;
+    return {
+      profile,
+      activeLevel,
+      currentTopic: selectedTopic,
+      availableTopics,
+      schedule: {
+        reviewMinutes: Math.round(total * 0.2),
+        newWordsMinutes: Math.round(total * 0.3),
+        grammarMinutes: Math.round(total * 0.2),
+        mixedPracticeMinutes: Math.round(total * 0.3),
+      },
+      reviewWords,
+      newWords,
+      grammarPoints,
+    };
+  }
+
+  async aiExpandWords(cefrLevel: string, topic?: string, count = 20, model?: string) {
+    const level = LEVEL_ORDER.includes(cefrLevel as any) ? cefrLevel : 'A1';
+    const existing = await this.prisma.englishVocab.findMany({ select: { word: true } });
+    const existingSet = new Set(existing.map((e) => e.word.toLowerCase()));
+    const sampleExisting = Array.from(existingSet).slice(-100).join(', ');
+
+    const prompt = `Hãy cung cấp ${count} từ vựng tiếng Anh thực tế thuộc trình độ **CEFR ${level}** ${topic ? `về chủ đề "${topic}"` : 'theo các chủ đề giao tiếp & công việc thông dụng'} mà CHƯA có trong danh sách:
+[${sampleExisting}]
+
+Trả về STRICT JSON:
+{
+  "words": [
+    {
+      "word": "từ tiếng Anh",
+      "ipa": "/phiên âm IPA/",
+      "meaning": "nghĩa tiếng Việt ngắn gọn",
+      "partOfSpeech": "Verb | Noun | Adjective | Adverb",
+      "topic": "Tên chủ đề tiếng Anh ngắn gọn",
+      "exampleEn": "1 câu ví dụ tự nhiên trình độ ${level}",
+      "exampleVi": "Nghĩa tiếng Việt của câu ví dụ"
+    }
+  ]
+}`;
+
+    const raw = await this.geminiService.generateText(prompt, {
+      model,
+      systemInstruction: 'You are an English CEFR curriculum designer for Vietnamese learners. Output valid JSON only.',
+      temperature: 0.4,
+    });
+
+    const parsed = this.parseJsonSafe<{ words: Array<any> }>(raw);
+    let addedCount = 0;
+
+    for (const item of parsed.words || []) {
+      const w = item.word?.trim();
+      if (!w || existingSet.has(w.toLowerCase())) continue;
+      try {
+        await this.prisma.englishVocab.create({
+          data: {
+            word: w,
+            ipa: item.ipa || '',
+            meaning: item.meaning || '',
+            partOfSpeech: item.partOfSpeech || '',
+            cefrLevel: level,
+            topic: item.topic || topic || 'General Communication',
+            exampleEn: item.exampleEn || '',
+            exampleVi: item.exampleVi || '',
+            status: 'new',
+          },
+        });
+        existingSet.add(w.toLowerCase());
+        addedCount++;
+      } catch {
+        // Ignore duplicate
+      }
+    }
+
+    return { addedCount, level };
+  }
+
+  async submitSrsReview(id: string, quality: 'again' | 'hard' | 'good' | 'easy') {
+    const vocab = await this.prisma.englishVocab.findUnique({ where: { id } });
+    if (!vocab) throw new NotFoundException('Không tìm thấy từ vựng tiếng Anh.');
+
+    let srsLevel = vocab.srsLevel;
+    let intervalDays = vocab.intervalDays;
+    let easeFactor = vocab.easeFactor;
+    let correctCount = vocab.correctCount;
+    let wrongCount = vocab.wrongCount;
+
+    if (quality === 'again') {
+      srsLevel = 0;
+      intervalDays = 0.5;
+      easeFactor = Math.max(1.3, easeFactor - 0.2);
+      wrongCount++;
+    } else if (quality === 'hard') {
+      srsLevel = Math.max(1, srsLevel);
+      intervalDays = Math.max(1, intervalDays * 1.2 || 1);
+      correctCount++;
+    } else if (quality === 'good') {
+      srsLevel += 1;
+      const steps = [1, 3, 7, 14, 30];
+      intervalDays = steps[Math.min(srsLevel - 1, steps.length - 1)];
+      correctCount++;
+    } else {
+      srsLevel += 2;
+      const steps = [3, 7, 15, 30, 60];
+      intervalDays = steps[Math.min(srsLevel - 1, steps.length - 1)];
+      easeFactor = Math.min(3.0, easeFactor + 0.15);
+      correctCount++;
+    }
+
+    const status =
+      quality === 'again' ? 'learning' : srsLevel >= 4 ? 'mastered' : srsLevel >= 2 ? 'review' : 'learning';
+
+    return this.prisma.englishVocab.update({
+      where: { id },
+      data: {
+        status,
+        srsLevel,
+        intervalDays,
+        easeFactor,
+        nextReviewAt: new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000),
+        lastReviewedAt: new Date(),
+        reviewCount: vocab.reviewCount + 1,
+        correctCount,
+        wrongCount,
+      },
+    });
+  }
+
+  async getWordDeepDive(id: string, model?: string) {
+    const vocab = await this.prisma.englishVocab.findUnique({ where: { id } });
+    if (!vocab) throw new NotFoundException('Không tìm thấy từ vựng tiếng Anh.');
+    if (vocab.aiDeepDive) {
+      return { cached: true, word: vocab.word, deepDive: vocab.aiDeepDive };
+    }
+
+    const prompt = `Phân tích chuyên sâu từ tiếng Anh trình độ ${vocab.cefrLevel} cho người Việt:
+- Từ: ${vocab.word} (${vocab.ipa || ''})
+- Nghĩa: ${vocab.meaning} (${vocab.partOfSpeech})
+
+Trả về STRICT JSON:
+{
+  "pronunciationTip": "Mẹo phát âm chuẩn (trọng âm, âm cuối hay bị người Việt bỏ sót)",
+  "memoryHook": "Mẹo liên tưởng hoặc gốc từ (prefix/root/suffix) để nhớ sâu",
+  "collocations": [
+    { "phrase": "cụm từ hay đi kèm", "meaning": "nghĩa tiếng Việt" }
+  ],
+  "commonTrap": "Lỗi người Việt hay mắc khi dùng từ này (giới từ đi kèm, từ dễ nhầm)",
+  "examples": [
+    { "english": "Câu ví dụ tự nhiên", "vietnamese": "Nghĩa tiếng Việt" }
+  ]
+}`;
+
+    const raw = await this.geminiService.generateText(prompt, {
+      model,
+      systemInstruction: 'You are an English tutor for Vietnamese learners. Output valid JSON only.',
+      temperature: 0.4,
+    });
+    const parsed = this.parseJsonSafe(raw);
+
+    await this.prisma.englishVocab.update({
+      where: { id },
+      data: { aiDeepDive: parsed as any },
+    });
+
+    return { cached: false, word: vocab.word, deepDive: parsed };
+  }
+
+  async generateTopicDialogue(body: {
+    newWordIds: string[];
+    oldWordIds?: string[];
+    topic?: string;
+    cefrLevel?: string;
+    model?: string;
+  }) {
+    const [newWords, oldWords, extraLearned] = await Promise.all([
+      this.prisma.englishVocab.findMany({ where: { id: { in: body.newWordIds || [] } } }),
+      body.oldWordIds?.length
+        ? this.prisma.englishVocab.findMany({ where: { id: { in: body.oldWordIds } } })
+        : Promise.resolve([]),
+      this.prisma.englishVocab.findMany({
+        where: { cefrLevel: 'A1' },
+        take: 25,
+      }),
+    ]);
+
+    if (newWords.length === 0) {
+      throw new BadRequestException('Không có từ mới nào để tạo hội thoại.');
+    }
+
+    const newList = newWords.map((w) => `${w.word} (${w.meaning})`).join(', ');
+    const oldPool = Array.from(new Set([...oldWords, ...extraLearned].map((w) => `${w.word} (${w.meaning})`)))
+      .slice(0, 30)
+      .join(', ');
+
+    const prompt = `Bạn là giáo viên tiếng Anh CEFR ${body.cefrLevel || 'A1-B2'} cho người Việt.
+Hãy tạo một đoạn hội thoại giao tiếp tự nhiên (6-10 lượt thoại giữa A và B) theo chủ đề "${body.topic || 'Daily Life'}":
+- Từ mới hôm nay (ĐƯA VÀO TỐI ĐA): [${newList}]
+- Từ cũ (TÁI SỬ DỤNG LẶP LẠI NHIỀU ĐỂ DỄ NHỚ): [${oldPool}]
+
+Và 4 mẫu câu ngắn (keySentences) dễ thuộc lòng kết hợp từ mới + từ cũ.
+Trả về STRICT JSON:
+{
+  "dialogueTitle": "Tiêu đề đoạn hội thoại",
+  "context": "Bối cảnh ngắn bằng tiếng Việt",
+  "topicConnectionNote": "Giải thích ngắn cách các từ mới liên kết với nhau theo chủ đề",
+  "dialogue": [
+    { "speaker": "A", "english": "Natural English sentence", "vietnamese": "Nghĩa tiếng Việt", "usedNewWords": ["word1"] }
+  ],
+  "keySentences": [
+    { "english": "Short memorable sentence", "vietnamese": "Nghĩa tiếng Việt" }
+  ]
+}`;
+
+    const raw = await this.geminiService.generateText(prompt, {
+      model: body.model,
+      systemInstruction: 'You are an English conversation designer. Output valid JSON only.',
+      temperature: 0.45,
+    });
+
+    return this.parseJsonSafe(raw);
+  }
+
+  async generateMixedPractice(body: {
+    newWordIds: string[];
+    reviewWordIds: string[];
+    grammarIds: string[];
+    cefrLevel?: string;
+    model?: string;
+  }) {
+    const [newWords, reviewWords, grammars] = await Promise.all([
+      this.prisma.englishVocab.findMany({ where: { id: { in: body.newWordIds || [] } } }),
+      this.prisma.englishVocab.findMany({ where: { id: { in: body.reviewWordIds || [] } } }),
+      this.prisma.englishGrammar.findMany({ where: { id: { in: body.grammarIds || [] } } }),
+    ]);
+
+    const newList = newWords.map((w) => `${w.word} (${w.meaning})`).join(', ');
+    const oldList = reviewWords.slice(0, 15).map((w) => `${w.word} (${w.meaning})`).join(', ');
+    const grammarText = grammars.map((g) => `${g.title}: ${g.pattern}`).join(' | ');
+
+    const prompt = `Tạo bộ bài tập luyện viết tiếng Anh trình độ ${body.cefrLevel || 'A1-B2'} cho người Việt:
+- Từ mới hôm nay: [${newList}]
+- Từ cũ ôn tập: [${oldList}]
+- Ngữ pháp trọng tâm: [${grammarText || 'Cơ bản'}]
+
+Yêu cầu:
+1. 15 câu dịch Việt -> Anh kết hợp từ mới + từ cũ + ngữ pháp trọng tâm (đa dạng tình huống đời sống & công việc).
+2. 3 đề bài viết câu tự do (freePrompts) cho sẵn 2-3 từ khóa.
+
+Trả về STRICT JSON:
+{
+  "translationExercises": [
+    { "vietnamese": "Câu tiếng Việt", "referenceEnglish": "Natural English sentence", "targetWords": ["word1"], "grammarHint": "Gợi ý ngữ pháp" }
+  ],
+  "freePrompts": [
+    { "instruction": "Yêu cầu đặt câu tiếng Việt", "targetWords": ["word1", "word2"], "grammarTitle": "Tên ngữ pháp" }
+  ]
+}`;
+
+    const raw = await this.geminiService.generateText(prompt, {
+      model: body.model,
+      systemInstruction: 'You are an English exercise designer. Output valid JSON only.',
+      temperature: 0.4,
+    });
+
+    return this.parseJsonSafe(raw);
+  }
+
+  async evaluateAttempt(body: {
+    promptVietnamese: string;
+    referenceEnglish?: string;
+    targetWords?: string[];
+    grammarTitle?: string;
+    userEnglish: string;
+    cefrLevel?: string;
+    model?: string;
+  }) {
+    if (!body.userEnglish?.trim()) {
+      throw new BadRequestException('Vui lòng nhập câu tiếng Anh để AI đánh giá.');
+    }
+
+    const prompt = `Bạn là gia sư tiếng Anh 1 kèm 1 cho học viên Việt Nam (trình độ mục tiêu ${body.cefrLevel || 'A1-B2'}).
+Hãy chấm điểm & nhận xét CÁ NHÂN HÓA câu tiếng Anh sau:
+- Đề bài: "${body.promptVietnamese}"
+${body.referenceEnglish ? `- Đáp án tham khảo: "${body.referenceEnglish}"` : ''}
+${body.targetWords?.length ? `- Từ mục tiêu: [${body.targetWords.join(', ')}]` : ''}
+${body.grammarTitle ? `- Ngữ pháp: "${body.grammarTitle}"` : ''}
+- Câu học viên viết: "${body.userEnglish.trim()}"
+
+Trả về STRICT JSON:
+{
+  "score": 85,
+  "isCorrect": true,
+  "correctedEnglish": "Câu tiếng Anh tự nhiên & chuẩn xác nhất",
+  "grammarFeedback": "Nhận xét chi tiết ngữ pháp (thì, chia động từ, mạo từ, giới từ...)",
+  "vocabFeedback": "Nhận xét cách dùng từ & collocations",
+  "naturalnessFeedback": "Người bản xứ có nói vậy không? Gợi ý cách diễn đạt tự nhiên hơn",
+  "personalizedTip": "1 lời khuyên cá nhân hóa ngắn gọn để nhớ lâu",
+  "weakWordsDetected": ["từ dùng sai nếu có"]
+}`;
+
+    const raw = await this.geminiService.generateText(prompt, {
+      model: body.model,
+      systemInstruction: 'You are a supportive 1-on-1 English tutor for Vietnamese learners. Output valid JSON only.',
+      temperature: 0.3,
+    });
+
+    return this.parseJsonSafe(raw);
+  }
+
+  async evaluateBatch(body: {
+    items: Array<{
+      key: string;
+      promptVietnamese: string;
+      referenceEnglish?: string;
+      targetWords?: string[];
+      grammarTitle?: string;
+      userEnglish: string;
+    }>;
+    cefrLevel?: string;
+    model?: string;
+  }) {
+    const validItems = (body.items || []).filter((i) => i.userEnglish && i.userEnglish.trim());
+    if (validItems.length === 0) {
+      throw new BadRequestException('Vui lòng viết ít nhất 1 câu tiếng Anh trước khi chấm bài.');
+    }
+
+    const itemsText = validItems
+      .map(
+        (item, idx) =>
+          `${idx + 1}. [key="${item.key}"] Đề: "${item.promptVietnamese}" | Mục tiêu: [${(item.targetWords || []).join(', ')}] | Ngữ pháp: "${item.grammarTitle || ''}" | Học viên viết: "${item.userEnglish.trim()}"`,
+      )
+      .join('\n');
+
+    const prompt = `Bạn là gia sư tiếng Anh 1 kèm 1 cho học viên Việt Nam (trình độ mục tiêu ${body.cefrLevel || 'A1-B2'}).
+Hãy chấm điểm và nhận xét CÁ NHÂN HÓA TẤT CẢ ${validItems.length} câu sau trong một lần:
+${itemsText}
+
+Trả về STRICT JSON:
+{
+  "overallScore": 85,
+  "overallComment": "Nhận xét tổng quan 2-3 câu về điểm mạnh, lỗi ngữ pháp/từ vựng hay lặp lại và lời khuyên cá nhân hóa",
+  "results": [
+    {
+      "key": "đúng key ở trên",
+      "score": 85,
+      "isCorrect": true,
+      "correctedEnglish": "Câu tiếng Anh tự nhiên & chuẩn xác nhất",
+      "grammarFeedback": "Nhận xét ngắn gọn ngữ pháp",
+      "vocabFeedback": "Nhận xét ngắn gọn từ vựng",
+      "personalizedTip": "1 mẹo nhớ ngắn cho câu này"
+    }
+  ]
+}`;
+
+    const raw = await this.geminiService.generateText(prompt, {
+      model: body.model,
+      systemInstruction: 'You are a supportive 1-on-1 English tutor grading a batch of exercises. Output valid JSON only.',
+      temperature: 0.3,
+    });
+
+    return this.parseJsonSafe(raw);
+  }
+
+  async completeDailySession(body: {
+    minutesSpent: number;
+    newWordsLearned: number;
+    wordsReviewed: number;
+    averageScore?: number;
+    model?: string;
+  }) {
+    const profile = await this.getOrCreateProfile();
+    const today = new Date().toISOString().slice(0, 10);
+
+    let aiCoachingFeedback: any = {
+      headline: `Hoàn thành Ngày ${profile.currentDayNumber} (${profile.currentLevel})!`,
+      strengths: `Bạn đã ôn ${body.wordsReviewed} từ cũ và học ${body.newWordsLearned} từ mới.`,
+      areasToImprove: 'Tiếp tục luyện đặt câu và nghe phát âm để phản xạ nhanh hơn.',
+      tomorrowFocus: 'Ngày mai giữ nhịp ôn SRS và tăng dần câu phức.',
+    };
+
+    try {
+      const prompt = `Cố vấn học tiếng Anh cá nhân hóa. Học viên ở trình độ ${profile.currentLevel} vừa xong Ngày ${profile.currentDayNumber}:
+- Thời gian: ${body.minutesSpent} phút | Từ mới: ${body.newWordsLearned} | Từ cũ ôn: ${body.wordsReviewed} | Điểm TB: ${body.averageScore ?? 'Chưa chấm'}.
+Trả về STRICT JSON: { "headline": "...", "strengths": "...", "areasToImprove": "...", "tomorrowFocus": "..." }`;
+      const raw = await this.geminiService.generateText(prompt, {
+        model: body.model || profile.preferredModel,
+        systemInstruction: 'You are an English study coach. Output valid JSON only.',
+        temperature: 0.4,
+      });
+      aiCoachingFeedback = this.parseJsonSafe(raw);
+    } catch {
+      // Fallback already set
+    }
+
+    const log = await this.prisma.englishStudyLog.create({
+      data: {
+        date: today,
+        dayNumber: profile.currentDayNumber,
+        level: profile.currentLevel,
+        minutesSpent: body.minutesSpent,
+        newWordsLearned: body.newWordsLearned,
+        wordsReviewed: body.wordsReviewed,
+        score: body.averageScore ?? null,
+        aiCoachingFeedback,
+      },
+    });
+
+    await this.prisma.englishProfile.update({
+      where: { id: 'default' },
+      data: { currentDayNumber: profile.currentDayNumber + 1 },
+    });
+
+    return log;
+  }
+
+  async getGrammarList(level?: string) {
+    await this.ensureSeeded();
+    return this.prisma.englishGrammar.findMany({
+      where: level && LEVEL_ORDER.includes(level as any) ? { cefrLevel: level } : undefined,
+      orderBy: [{ orderIndex: 'asc' }],
+    });
+  }
+
+  async updateGrammarStatus(id: string, status: 'new' | 'learning' | 'mastered') {
+    const existing = await this.prisma.englishGrammar.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Không tìm thấy điểm ngữ pháp.');
+    return this.prisma.englishGrammar.update({
+      where: { id },
+      data: { status, practiceCount: existing.practiceCount + 1, lastPracticedAt: new Date() },
+    });
+  }
+}
