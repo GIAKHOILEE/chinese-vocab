@@ -33,20 +33,17 @@ export default function DashboardPage() {
     questionsPracticed: 0,
   });
   const [curriculum, setCurriculum] = useState<CurriculumSummary | null>(null);
-  const [englishSummary, setEnglishSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadStats() {
       try {
-        const [data, curr, eng] = await Promise.all([
+        const [data, curr] = await Promise.all([
           fetchApi<Stats>('/practice/stats/dashboard'),
           fetchApi<CurriculumSummary>('/curriculum/summary').catch(() => null),
-          fetchApi<any>('/english/summary').catch(() => null),
         ]);
         setStats(data);
         setCurriculum(curr);
-        setEnglishSummary(eng);
       } catch (err) {
         console.error('Không thể tải thống kê Dashboard:', err);
       } finally {
@@ -116,67 +113,42 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 2 Lộ trình học song song: Tiếng Trung & Tiếng Anh */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {curriculum && (
-          <div className="bg-gradient-to-br from-indigo-600 to-violet-600 text-white p-6 rounded-xl shadow-sm flex flex-col justify-between gap-4">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-indigo-100">
-                Tiếng Trung • Ngày {curriculum.profile.currentDayNumber} ({curriculum.profile.dailyMinutesTarget}p/ngày)
-              </div>
-              <h2 className="text-xl font-bold mt-1">HSK 2 (Bản 3.0)</h2>
-              <p className="text-xs sm:text-sm text-indigo-100 mt-1.5">
-                HSK 1: {curriculum.stats.hsk1Count} từ • HSK 2: {curriculum.stats.hsk2Count}/{curriculum.stats.hsk2Target} từ • Ngữ pháp: {curriculum.stats.grammarMastered}/{curriculum.stats.grammarTotal}
-              </p>
+      {/* Lộ trình HSK 2 (3.0) Cá nhân hóa */}
+      {curriculum && (
+        <div className="bg-gradient-to-r from-indigo-600 to-violet-600 text-white p-6 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-indigo-100">
+              Tiếng Trung • Ngày {curriculum.profile.currentDayNumber} ({curriculum.profile.dailyMinutesTarget} phút/ngày)
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <Link
-                href="/study"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-indigo-700 hover:bg-indigo-50 font-semibold text-sm shadow-sm transition"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>Vào học Tiếng Trung</span>
-              </Link>
-              <Link
-                href="/grammar"
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/40 hover:bg-indigo-500/60 text-white font-medium text-sm transition"
-              >
-                <GraduationCap className="w-4 h-4" />
-                <span>Ngữ pháp</span>
-              </Link>
-            </div>
+            <h2 className="text-xl font-bold mt-1">Lộ trình HSK 2 (Bản 3.0)</h2>
+            <p className="text-sm text-indigo-100 mt-1">
+              HSK 1: {curriculum.stats.hsk1Count} từ • HSK 2: {curriculum.stats.hsk2Count}/{curriculum.stats.hsk2Target} từ • Cần ôn hôm nay: {curriculum.stats.dueReviewCount} từ • Ngữ pháp: {curriculum.stats.grammarMastered}/{curriculum.stats.grammarTotal}
+            </p>
           </div>
-        )}
-
-        {englishSummary && (
-          <div className="bg-gradient-to-br from-emerald-600 to-teal-600 text-white p-6 rounded-xl shadow-sm flex flex-col justify-between gap-4">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wider text-emerald-100">
-                Tiếng Anh • Bậc {englishSummary.profile.currentLevel} • Ngày {englishSummary.profile.currentDayNumber}
-              </div>
-              <h2 className="text-xl font-bold mt-1">English Roadmap (A1 → B2)</h2>
-              <p className="text-xs sm:text-sm text-emerald-100 mt-1.5">
-                Kho từ: {englishSummary.stats.totalWords} từ (A1–B2) • Ngữ pháp: {englishSummary.stats.grammarMastered}/{englishSummary.stats.grammarTotal}
-              </p>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <Link
-                href="/english"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-emerald-700 hover:bg-emerald-50 font-semibold text-sm shadow-sm transition"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>Vào học Tiếng Anh</span>
-              </Link>
-              <Link
-                href="/english/placement"
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/40 hover:bg-emerald-500/60 text-white font-medium text-sm transition"
-              >
-                <span>Test trình độ</span>
-              </Link>
-            </div>
+          <div className="flex gap-2 flex-wrap shrink-0">
+            <Link
+              href="/study"
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-white text-indigo-700 hover:bg-indigo-50 font-semibold text-sm shadow-sm transition"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Vào học hôm nay</span>
+            </Link>
+            <Link
+              href="/games"
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-indigo-500/40 hover:bg-indigo-500/60 text-white font-medium text-sm transition"
+            >
+              <span>Mini-Game</span>
+            </Link>
+            <Link
+              href="/grammar"
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-indigo-500/40 hover:bg-indigo-500/60 text-white font-medium text-sm transition"
+            >
+              <GraduationCap className="w-4 h-4" />
+              <span>Ngữ pháp</span>
+            </Link>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Các nút hành động nhanh */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">

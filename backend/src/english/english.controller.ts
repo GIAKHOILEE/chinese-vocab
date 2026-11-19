@@ -125,6 +125,11 @@ export class EnglishController {
     return this.englishService.completeDailySession(body);
   }
 
+  @Get('vocab')
+  getVocabList(@Query('level') level?: string) {
+    return this.englishService.getVocabList(level);
+  }
+
   @Get('grammar')
   getGrammarList(@Query('level') level?: string) {
     return this.englishService.getGrammarList(level);

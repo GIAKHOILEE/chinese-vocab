@@ -11,6 +11,7 @@ import {
   Sparkles,
   Languages,
   ClipboardCheck,
+  Gamepad2,
 } from 'lucide-react';
 
 export default function Navigation() {
@@ -20,6 +21,7 @@ export default function Navigation() {
   const chineseNavItems = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/study', label: 'Lộ trình HSK 2', icon: Sparkles },
+    { href: '/games', label: 'Mini-Game', icon: Gamepad2 },
     { href: '/grammar', label: 'Ngữ pháp', icon: GraduationCap },
     { href: '/vocabulary', label: 'Từ vựng', icon: BookOpen },
     { href: '/practice/new', label: 'Tạo bài tập', icon: PenTool },
@@ -27,8 +29,9 @@ export default function Navigation() {
   ];
 
   const englishNavItems = [
-    { href: '/', label: 'Tổng quan', icon: LayoutDashboard },
+    { href: '/english/dashboard', label: 'Dashboard EN', icon: LayoutDashboard },
     { href: '/english', label: 'Lộ trình A1→B2', icon: Sparkles },
+    { href: '/english/games', label: 'Mini-Game', icon: Gamepad2 },
     { href: '/english/placement', label: 'Test trình độ', icon: ClipboardCheck },
     { href: '/english/grammar', label: 'Ngữ pháp EN', icon: GraduationCap },
   ];
@@ -38,10 +41,10 @@ export default function Navigation() {
   return (
     <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
       <div className="max-w-5xl mx-auto px-4">
-        {/* Hàng 1: Logo + 2 Tab chuyển ngôn ngữ rõ ràng */}
+        {/* Hàng 1: Logo + 2 Tab chuyển ngôn ngữ riêng biệt */}
         <div className="h-14 flex items-center justify-between gap-3">
           <Link
-            href="/"
+            href={isEnglishMode ? '/english/dashboard' : '/'}
             className="flex items-center gap-2 font-bold text-slate-800 text-base sm:text-lg hover:text-indigo-600 transition shrink-0"
           >
             <div
@@ -51,13 +54,15 @@ export default function Navigation() {
             >
               {isEnglishMode ? 'EN' : '写'}
             </div>
-            <span className="hidden sm:inline">Language Studio</span>
+            <span className="hidden sm:inline">
+              {isEnglishMode ? 'English Studio' : 'Chinese Studio'}
+            </span>
           </Link>
 
-          {/* 2 Tab chuyển Tiếng Trung / Tiếng Anh */}
+          {/* 2 Tab chuyển Tiếng Trung / Tiếng Anh (mỗi tab vào Dashboard riêng) */}
           <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
             <Link
-              href="/study"
+              href="/"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
                 !isEnglishMode
                   ? 'bg-indigo-600 text-white shadow-sm'
@@ -68,7 +73,7 @@ export default function Navigation() {
               <span>Tiếng Trung (HSK 2)</span>
             </Link>
             <Link
-              href="/english"
+              href="/english/dashboard"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
                 isEnglishMode
                   ? 'bg-emerald-600 text-white shadow-sm'
@@ -89,6 +94,7 @@ export default function Navigation() {
               pathname === item.href ||
               (item.href !== '/' &&
                 item.href !== '/english' &&
+                item.href !== '/english/dashboard' &&
                 item.href !== '/practice' &&
                 pathname.startsWith(item.href));
 

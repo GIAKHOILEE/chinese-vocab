@@ -775,6 +775,14 @@ Trả về STRICT JSON: { "headline": "...", "strengths": "...", "areasToImprove
     return log;
   }
 
+  async getVocabList(level?: string) {
+    await this.ensureSeeded();
+    return this.prisma.englishVocab.findMany({
+      where: level && LEVEL_ORDER.includes(level as any) ? { cefrLevel: level } : undefined,
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   async getGrammarList(level?: string) {
     await this.ensureSeeded();
     return this.prisma.englishGrammar.findMany({
