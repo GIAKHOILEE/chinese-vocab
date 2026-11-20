@@ -8,6 +8,7 @@ import {
   Volume2,
   RefreshCw,
   CheckCircle2,
+  XCircle,
   BookOpen,
   GraduationCap,
   PenTool,
@@ -143,6 +144,8 @@ export default function StudyPage() {
   const [reviewIdx, setReviewIdx] = useState(0);
   const [showReviewAnswer, setShowReviewAnswer] = useState(false);
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
+  const [reviewInput, setReviewInput] = useState('');
+  const [reviewCheckResult, setReviewCheckResult] = useState<'correct' | 'pinyin' | 'wrong' | null>(null);
 
   // Phase 2: New Words state
   const [learnedNewIds, setLearnedNewIds] = useState<Set<string>>(new Set());
@@ -273,6 +276,44 @@ export default function StudyPage() {
     }
   }
 
+  function normalizePinyin(text: string): string {
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/v/gi, 'u')
+      .replace(/[^a-z0-9]/gi, '')
+      .toLowerCase();
+  }
+
+  function handleCheckReviewAnswer() {
+    if (!currentReviewWord) return;
+    const raw = reviewInput.trim();
+    if (!raw) {
+      setReviewCheckResult(null);
+      setShowReviewAnswer(true);
+      return;
+    }
+
+    const normalizedInputWord = raw.replace(/\s+/g, '');
+    const normalizedTargetWord = currentReviewWord.word.trim().replace(/\s+/g, '');
+
+    if (normalizedInputWord === normalizedTargetWord) {
+      setReviewCheckResult('correct');
+    } else {
+      const normInputPinyin = normalizePinyin(raw);
+      const pinyinVariants = (currentReviewWord.pinyin || '')
+        .split(/[,/;|]/)
+        .map((p) => normalizePinyin(p))
+        .filter(Boolean);
+      if (normInputPinyin.length > 0 && pinyinVariants.includes(normInputPinyin)) {
+        setReviewCheckResult('pinyin');
+      } else {
+        setReviewCheckResult('wrong');
+      }
+    }
+    setShowReviewAnswer(true);
+  }
+
   async function handleSrsSubmit(vocabId: string, quality: 'again' | 'hard' | 'good' | 'easy') {
     try {
       await fetchApi('/curriculum/srs-review', {
@@ -281,6 +322,8 @@ export default function StudyPage() {
       });
       setReviewedIds((prev) => new Set(prev).add(vocabId));
       setShowReviewAnswer(false);
+      setReviewInput('');
+      setReviewCheckResult(null);
       if (plan && reviewIdx < plan.reviewWords.length - 1) {
         setReviewIdx((i) => i + 1);
       }
@@ -487,8 +530,10 @@ export default function StudyPage() {
 
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto py-12 text-center text-slate-500">
-        Đang chuẩn bị giáo trình HSK 2 (3.0) cá nhân hóa cho bạn...
+      <div className="max-w-4xl mx-auto py-12">
+        <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
+          Đang chuẩn bị giáo trình HSK 2 (3.0) cá nhân hóa cho bạn...
+        </div>
       </div>
     );
   }
@@ -499,27 +544,28 @@ export default function StudyPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
-      {/* Header & Cấu hình cá nhân */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 sm:p-6 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      {/* Header & Cấu hình cá nhân (Bento Top Card) */}
+      <div className="clay-card p-6 sm:p-7 space-y-5 relative overflow-hidden">
+        <div className="absolute -right-12 -top-12 w-44 h-44 rounded-full bg-peach-200/30 blur-2xl pointer-events-none" />
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-semibold mb-2">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-peach-100/90 border border-peach-200/70 text-peach-700 text-xs font-extrabold shadow-clay-sm mb-2.5">
               <Sparkles className="w-3.5 h-3.5" />
               <span>Giáo trình HSK 2 (3.0) • Ngày thứ {plan.profile.currentDayNumber}</span>
             </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-slate-900">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-cocoa-900 tracking-tight">
               Lộ trình học hiểu & ôn tập sâu ({plan.profile.dailyMinutesTarget} phút/ngày)
             </h1>
-            <p className="text-sm text-slate-600 mt-1">
+            <p className="text-sm text-cocoa-600 mt-1">
               Kết hợp từ cũ (HSK 1 & 2) + từ mới HSK 2 (3.0) + ngữ pháp + AI đánh giá cá nhân hóa.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2.5">
             <button
               onClick={handleSyncHsk2}
               disabled={syncing}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-sm font-medium transition disabled:opacity-50"
+              className="clay-btn-sage inline-flex items-center gap-1.5 px-4 py-2.5 text-xs sm:text-sm"
             >
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
               <span>{syncing ? 'Đang đồng bộ...' : 'Đồng bộ kho HSK 2 (3.0)'}</span>
@@ -527,7 +573,7 @@ export default function StudyPage() {
             <button
               onClick={handleAiExpand}
               disabled={expanding}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs sm:text-sm font-medium transition disabled:opacity-50"
+              className="clay-btn-cream text-peach-700 border-peach-300/50 bg-peach-50/90 hover:bg-peach-100/80 inline-flex items-center gap-1.5 px-4 py-2.5 text-xs sm:text-sm"
             >
               <PlusCircle className="w-4 h-4" />
               <span>{expanding ? 'AI đang tìm từ...' : 'AI Bổ sung +25 từ HSK 2'}</span>
@@ -536,18 +582,18 @@ export default function StudyPage() {
         </div>
 
         {/* Thanh cấu hình thời lượng & Gemini Model */}
-        <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+        <div className="relative pt-4 border-t border-cocoa-400/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
           <div className="flex items-center gap-2 flex-wrap">
-            <Clock className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-600 font-medium">Thời lượng hôm nay:</span>
+            <Clock className="w-4 h-4 text-cocoa-400" />
+            <span className="text-cocoa-600 font-bold text-xs">Thời lượng hôm nay:</span>
             {[60, 90, 120].map((m) => (
               <button
                 key={m}
                 onClick={() => handleChangeTargetMinutes(m)}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+                className={`px-3.5 py-1.5 rounded-[14px] text-xs font-extrabold transition ${
                   plan.profile.dailyMinutesTarget === m
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    ? 'clay-btn-peach'
+                    : 'bg-linen-200/80 text-cocoa-600 hover:bg-linen-300/80'
                 }`}
               >
                 {m} phút
@@ -556,12 +602,12 @@ export default function StudyPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Brain className="w-4 h-4 text-indigo-500" />
-            <span className="text-slate-600 text-xs font-medium">Gemini Model:</span>
+            <Brain className="w-4 h-4 text-peach-600" />
+            <span className="text-cocoa-600 text-xs font-bold">Gemini Model:</span>
             <select
               value={selectedModel}
               onChange={(e) => handleModelChange(e.target.value)}
-              className="border border-slate-200 rounded-md px-2.5 py-1 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="clay-input px-3 py-1.5 text-xs font-semibold"
             >
               {GEMINI_MODELS.map((m) => (
                 <option key={m.value} value={m.value}>
@@ -573,14 +619,14 @@ export default function StudyPage() {
         </div>
 
         {bannerMsg && (
-          <div className="p-3 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 text-sm">
+          <div className="relative p-3.5 rounded-[20px] bg-peach-100/80 border border-peach-300/50 text-peach-800 text-sm font-bold shadow-clay-sm">
             {bannerMsg}
           </div>
         )}
       </div>
 
-      {/* 4 Chặng học tập */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* 4 Chặng học tập (Bento Grid Tabs) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
         {[
           {
             step: 1 as const,
@@ -613,17 +659,17 @@ export default function StudyPage() {
             <button
               key={tab.step}
               onClick={() => setActivePhase(tab.step)}
-              className={`p-3.5 rounded-xl border text-left transition ${
+              className={`p-4 rounded-[24px] border text-left transition-all duration-200 ${
                 active
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                  : 'bg-white text-slate-700 border-slate-200 hover:border-indigo-300'
+                  ? 'bg-gradient-to-b from-peach-400 to-peach-500 text-linen-50 border-peach-300/50 shadow-clay-peach -translate-y-0.5'
+                  : 'clay-card-hover text-cocoa-700'
               }`}
             >
-              <div className="flex items-center gap-2 font-semibold text-sm">
-                <Icon className="w-4 h-4" />
+              <div className="flex items-center gap-2 font-extrabold text-sm">
+                <Icon className={`w-4 h-4 ${active ? 'text-linen-50' : 'text-peach-500'}`} />
                 <span>{tab.title}</span>
               </div>
-              <div className={`text-xs mt-1 ${active ? 'text-indigo-100' : 'text-slate-500'}`}>
+              <div className={`text-xs mt-1.5 font-semibold ${active ? 'text-peach-50/90' : 'text-cocoa-500'}`}>
                 {tab.sub}
               </div>
             </button>
@@ -633,90 +679,149 @@ export default function StudyPage() {
 
       {/* CHẶNG 1: ÔN TỪ CŨ (SRS) */}
       {activePhase === 1 && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-slate-800">
+        <div className="clay-card p-6 sm:p-8 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <h2 className="text-lg font-extrabold text-cocoa-900">
               Chặng 1: Ôn tập từ cũ (HSK 1 & HSK 2) theo lịch lặp lại ngắt quãng (SRS)
             </h2>
-            <span className="text-xs font-medium text-slate-500">
+            <span className="px-3.5 py-1 rounded-full bg-linen-200/85 text-cocoa-700 text-xs font-extrabold self-start sm:self-auto">
               Thẻ {Math.min(reviewIdx + 1, plan.reviewWords.length)} / {plan.reviewWords.length}
             </span>
           </div>
 
           {plan.reviewWords.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
+            <div className="clay-inset text-center py-10 px-4 text-cocoa-500 font-semibold">
               Chưa có từ cũ nào trong kho. Hãy bấm &quot;Đồng bộ kho HSK 2 (3.0)&quot; ở trên!
             </div>
           ) : currentReviewWord ? (
-            <div className="max-w-xl mx-auto border border-slate-200 rounded-xl p-6 bg-slate-50 space-y-5 text-center">
+            <div className="max-w-xl mx-auto clay-card-oat p-6 sm:p-8 space-y-5 text-center">
               <div className="flex items-center justify-center gap-2">
-                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-700 text-xs font-semibold">
+                <span className="px-3 py-1 rounded-full bg-sage-100 text-sage-700 border border-sage-200/70 text-xs font-extrabold">
                   {currentReviewWord.level || 'HSK'}
                 </span>
                 {currentReviewWord.partOfSpeech && (
-                  <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 text-xs font-medium">
+                  <span className="px-3 py-1 rounded-full bg-peach-100 text-peach-700 border border-peach-200/70 text-xs font-bold">
                     {currentReviewWord.partOfSpeech}
                   </span>
                 )}
               </div>
 
-              <div>
-                <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Nhớ lại & viết ra giấy</p>
-                <div className="text-2xl font-bold text-slate-900">{currentReviewWord.meaning}</div>
+              <div className="clay-inset py-5 px-4">
+                <p className="text-xs text-cocoa-400 font-bold uppercase tracking-wider mb-1.5">
+                  Nhớ lại & nhập thử hoặc viết ra giấy
+                </p>
+                <div className="text-2xl sm:text-3xl font-extrabold text-cocoa-900">
+                  {currentReviewWord.meaning}
+                </div>
               </div>
 
               {currentReviewWord.progress?.lastMistakeNote && (
-                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs text-left flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div className="p-3.5 rounded-[20px] bg-honey-100/85 border border-honey-200/80 text-honey-700 text-xs text-left flex items-start gap-2.5 font-semibold">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-honey-500" />
                   <span>Ghi chú lỗi trước đây: {currentReviewWord.progress.lastMistakeNote}</span>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <input
+                  type="text"
+                  value={reviewInput}
+                  onChange={(e) => setReviewInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !showReviewAnswer && reviewInput.trim()) {
+                      handleCheckReviewAnswer();
+                    }
+                  }}
+                  disabled={showReviewAnswer}
+                  placeholder="Nhập chữ Hán hoặc Pinyin để kiểm tra..."
+                  className="flex-1 clay-input px-4 py-3 text-center text-base font-bold disabled:opacity-70"
+                />
+                {!showReviewAnswer && (
+                  <button
+                    type="button"
+                    onClick={handleCheckReviewAnswer}
+                    disabled={!reviewInput.trim()}
+                    className="clay-btn-sage px-5 py-3 text-sm shrink-0"
+                  >
+                    Kiểm tra
+                  </button>
+                )}
+              </div>
+
+              {reviewCheckResult && (
+                <div
+                  className={`p-3 rounded-[18px] text-xs sm:text-sm font-bold flex items-center justify-center gap-2 border ${
+                    reviewCheckResult === 'correct'
+                      ? 'bg-sage-100/90 border-sage-300/60 text-sage-800'
+                      : reviewCheckResult === 'pinyin'
+                      ? 'bg-honey-100/90 border-honey-200 text-honey-700'
+                      : 'bg-berry-100/90 border-berry-200 text-berry-700'
+                  }`}
+                >
+                  {reviewCheckResult === 'correct' ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>Chính xác! Bạn đã gõ đúng chữ Hán.</span>
+                    </>
+                  ) : reviewCheckResult === 'pinyin' ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>Đúng Pinyin! Kiểm tra lại mặt chữ Hán bên dưới nhé.</span>
+                    </>
+                  ) : (
+                    <>
+                      <XCircle className="w-4 h-4 shrink-0" />
+                      <span>Chưa khớp ({reviewInput.trim()}). Hãy đối chiếu đáp án bên dưới!</span>
+                    </>
+                  )}
                 </div>
               )}
 
               {!showReviewAnswer ? (
                 <button
-                  onClick={() => setShowReviewAnswer(true)}
-                  className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm transition"
+                  onClick={handleCheckReviewAnswer}
+                  className="clay-btn-peach px-6 py-3 text-sm"
                 >
                   Xem chữ Hán & Pinyin
                 </button>
               ) : (
-                <div className="space-y-4 pt-2 border-t border-slate-200">
+                <div className="space-y-4 pt-4 border-t border-cocoa-400/15 animate-fade-in">
                   <div className="flex items-center justify-center gap-3">
-                    <span className="text-4xl font-bold text-indigo-700 font-chinese">
+                    <span className="text-4xl font-bold text-peach-700 font-chinese">
                       {currentReviewWord.word}
                     </span>
                     <button
                       onClick={() => speakChinese(currentReviewWord.word)}
-                      className="p-2 rounded-full bg-white border border-slate-200 hover:bg-indigo-50 text-indigo-600"
+                      className="p-2.5 rounded-full bg-linen-50 border border-cocoa-400/20 hover:bg-peach-50 text-peach-600 shadow-clay-sm transition"
                       title="Nghe phát âm"
                     >
                       <Volume2 className="w-5 h-5" />
                     </button>
                   </div>
-                  <div className="text-base text-slate-600 font-medium">{currentReviewWord.pinyin}</div>
+                  <div className="text-base text-cocoa-600 font-bold">{currentReviewWord.pinyin}</div>
 
-                  <div className="grid grid-cols-4 gap-2 pt-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
                     <button
                       onClick={() => handleSrsSubmit(currentReviewWord.id, 'again')}
-                      className="py-2 px-2 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 text-xs font-semibold"
+                      className="py-2.5 px-2 rounded-[16px] bg-berry-100 hover:bg-berry-200/80 text-berry-700 border border-berry-200 text-xs font-extrabold shadow-clay-sm transition"
                     >
                       Quên (12h)
                     </button>
                     <button
                       onClick={() => handleSrsSubmit(currentReviewWord.id, 'hard')}
-                      className="py-2 px-2 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-semibold"
+                      className="py-2.5 px-2 rounded-[16px] bg-honey-100 hover:bg-honey-200/80 text-honey-700 border border-honey-200 text-xs font-extrabold shadow-clay-sm transition"
                     >
                       Khó (1 ngày)
                     </button>
                     <button
                       onClick={() => handleSrsSubmit(currentReviewWord.id, 'good')}
-                      className="py-2 px-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-semibold"
+                      className="py-2.5 px-2 rounded-[16px] bg-sage-100 hover:bg-sage-200/80 text-sage-700 border border-sage-300/60 text-xs font-extrabold shadow-clay-sm transition"
                     >
                       Nhớ (3+ ngày)
                     </button>
                     <button
                       onClick={() => handleSrsSubmit(currentReviewWord.id, 'easy')}
-                      className="py-2 px-2 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-800 text-xs font-semibold"
+                      className="py-2.5 px-2 rounded-[16px] bg-peach-100 hover:bg-peach-200/80 text-peach-700 border border-peach-300/60 text-xs font-extrabold shadow-clay-sm transition"
                     >
                       Quá dễ
                     </button>
@@ -729,7 +834,7 @@ export default function StudyPage() {
           <div className="flex justify-end">
             <button
               onClick={() => setActivePhase(2)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium"
+              className="clay-btn-dark inline-flex items-center gap-2 px-5 py-3 text-sm"
             >
               <span>Sang Chặng 2: Học từ mới HSK 2</span>
               <ArrowRight className="w-4 h-4" />
@@ -740,30 +845,30 @@ export default function StudyPage() {
 
       {/* CHẶNG 2: HỌC HIỂU TỪ MỚI HSK 2 (3.0) */}
       {activePhase === 2 && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="space-y-5">
+          <div className="clay-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-lg font-bold text-slate-800">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-lg font-extrabold text-cocoa-900">
                   Chặng 2: Học hiểu {plan.newWords.length} từ mới HSK 2 (3.0) theo chủ đề
                 </h2>
                 {plan.currentTopic && (
-                  <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-xs font-semibold">
+                  <span className="px-3 py-1 rounded-full bg-peach-100 text-peach-700 border border-peach-200/70 text-xs font-extrabold">
                     {plan.currentTopic}
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-cocoa-500 mt-1.5">
                 Các từ mới được gom theo cùng chủ đề để dễ tạo hội thoại & tái sử dụng từ cũ lặp lại nhiều lần cho dễ nhớ.
               </p>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap shrink-0">
+            <div className="flex items-center gap-2.5 flex-wrap shrink-0">
               {plan.availableTopics && plan.availableTopics.length > 0 && (
                 <select
                   value={plan.currentTopic || ''}
                   onChange={(e) => loadPlan(e.target.value)}
-                  className="border border-slate-200 rounded-lg px-2.5 py-2 text-xs bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="clay-input px-3.5 py-2.5 text-xs font-bold"
                 >
                   {plan.availableTopics.map((t) => (
                     <option key={t.topic} value={t.topic}>
@@ -774,7 +879,7 @@ export default function StudyPage() {
               )}
               <button
                 onClick={() => setActivePhase(3)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium"
+                className="clay-btn-dark inline-flex items-center gap-1.5 px-5 py-2.5 text-sm"
               >
                 <span>Sang Chặng 3</span>
                 <ArrowRight className="w-4 h-4" />
@@ -784,22 +889,22 @@ export default function StudyPage() {
 
           {/* Hội thoại & Mẫu câu gắn kết từ mới + từ cũ */}
           {plan.newWords.length > 0 && (
-            <div className="bg-gradient-to-br from-indigo-50 to-slate-50 rounded-xl border border-indigo-200 shadow-sm p-5 space-y-4">
+            <div className="clay-card-peach p-6 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-bold text-indigo-950 flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <h3 className="text-base font-extrabold text-cocoa-900 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-peach-600" />
                     <span>Hội thoại & Mẫu câu theo chủ đề (Từ mới + Từ cũ)</span>
                   </h3>
-                  <p className="text-xs text-slate-600 mt-0.5">
+                  <p className="text-xs text-cocoa-600 mt-0.5">
                     Đọc & nghe đoạn hội thoại lồng ghép {plan.newWords.length} từ mới hôm nay cùng các từ cũ đã học để nhớ sâu tự nhiên.
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   {topicDialogue && (
                     <button
                       onClick={() => setShowDialogueHelper((v) => !v)}
-                      className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                      className="clay-btn-cream px-3.5 py-2 text-xs"
                     >
                       {showDialogueHelper ? 'Ẩn Pinyin & Nghĩa' : 'Hiện Pinyin & Nghĩa'}
                     </button>
@@ -807,7 +912,7 @@ export default function StudyPage() {
                   <button
                     onClick={handleGenerateTopicDialogue}
                     disabled={generatingDialogue}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-semibold transition disabled:opacity-50"
+                    className="clay-btn-peach inline-flex items-center gap-1.5 px-4 py-2.5 text-xs sm:text-sm"
                   >
                     <Sparkles className="w-4 h-4" />
                     <span>
@@ -822,48 +927,48 @@ export default function StudyPage() {
               </div>
 
               {topicDialogue && (
-                <div className="space-y-4 pt-2 border-t border-indigo-200/70">
-                  <div className="bg-white rounded-lg p-4 border border-indigo-100 space-y-1.5">
-                    <div className="font-bold text-slate-900 text-base">{topicDialogue.dialogueTitle}</div>
-                    <p className="text-xs text-slate-600">{topicDialogue.context}</p>
+                <div className="space-y-4 pt-3 border-t border-peach-300/40 animate-fade-in">
+                  <div className="bg-linen-50/90 rounded-[22px] p-4 border border-peach-200/60 shadow-clay-sm space-y-1.5">
+                    <div className="font-extrabold text-cocoa-900 text-base">{topicDialogue.dialogueTitle}</div>
+                    <p className="text-xs text-cocoa-600">{topicDialogue.context}</p>
                     {topicDialogue.topicConnectionNote && (
-                      <p className="text-xs text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded mt-1">
+                      <p className="text-xs text-peach-800 bg-peach-100/75 px-3 py-2 rounded-[14px] mt-1.5">
                         <strong>Mẹo liên kết cụm từ:</strong> {topicDialogue.topicConnectionNote}
                       </p>
                     )}
                   </div>
 
                   {/* Đoạn hội thoại */}
-                  <div className="space-y-2">
+                  <div className="space-y-2.5">
                     {topicDialogue.dialogue.map((line, idx) => (
                       <div
                         key={idx}
-                        className="bg-white rounded-lg p-3.5 border border-slate-200 flex items-start justify-between gap-3"
+                        className="bg-linen-50/95 rounded-[22px] p-4 border border-cocoa-400/15 shadow-clay-sm flex items-start justify-between gap-3"
                       >
                         <div className="space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="px-2 py-0.5 rounded bg-indigo-600 text-white text-xs font-bold">
+                            <span className="px-2.5 py-0.5 rounded-full bg-peach-500 text-linen-50 text-xs font-extrabold">
                               {line.speaker}
                             </span>
-                            <span className="text-base font-semibold text-slate-900 font-chinese">
+                            <span className="text-base font-bold text-cocoa-900 font-chinese">
                               {line.chinese}
                             </span>
                             {line.usedNewWords?.length > 0 && (
-                              <span className="text-[11px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-sage-100 text-sage-700 border border-sage-200/70 font-bold">
                                 Từ mới: {line.usedNewWords.join(', ')}
                               </span>
                             )}
                           </div>
                           {showDialogueHelper && (
                             <>
-                              <div className="text-xs text-indigo-600 font-medium">{line.pinyin}</div>
-                              <div className="text-xs text-slate-600">{line.vietnamese}</div>
+                              <div className="text-xs text-peach-600 font-bold">{line.pinyin}</div>
+                              <div className="text-xs text-cocoa-600">{line.vietnamese}</div>
                             </>
                           )}
                         </div>
                         <button
                           onClick={() => speakChinese(line.chinese)}
-                          className="p-2 rounded-full bg-slate-50 border border-slate-200 hover:bg-indigo-50 text-indigo-600 shrink-0"
+                          className="p-2 rounded-full bg-linen-100 border border-cocoa-400/15 hover:bg-peach-100 text-peach-600 shadow-clay-sm shrink-0 transition"
                           title="Nghe câu thoại"
                         >
                           <Volume2 className="w-4 h-4" />
@@ -874,28 +979,28 @@ export default function StudyPage() {
 
                   {/* Mẫu câu ngắn dễ nhớ */}
                   {topicDialogue.keySentences?.length > 0 && (
-                    <div className="bg-white rounded-lg p-4 border border-slate-200 space-y-2.5">
-                      <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    <div className="bg-linen-50/90 rounded-[22px] p-4 border border-cocoa-400/15 shadow-clay-sm space-y-3">
+                      <div className="text-xs font-extrabold text-cocoa-700 uppercase tracking-wider">
                         Mẫu câu giao tiếp ngắn (Lặp lại từ mới + từ cũ)
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                         {topicDialogue.keySentences.map((s, idx) => (
                           <div
                             key={idx}
-                            className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-start justify-between gap-2"
+                            className="clay-inset p-3.5 flex items-start justify-between gap-2"
                           >
                             <div className="space-y-0.5">
-                              <div className="font-semibold text-slate-900 text-sm">{s.chinese}</div>
+                              <div className="font-bold text-cocoa-900 text-sm font-chinese">{s.chinese}</div>
                               {showDialogueHelper && (
                                 <>
-                                  <div className="text-xs text-indigo-600">{s.pinyin}</div>
-                                  <div className="text-xs text-slate-600">{s.vietnamese}</div>
+                                  <div className="text-xs text-peach-600 font-semibold">{s.pinyin}</div>
+                                  <div className="text-xs text-cocoa-600">{s.vietnamese}</div>
                                 </>
                               )}
                             </div>
                             <button
                               onClick={() => speakChinese(s.chinese)}
-                              className="p-1.5 rounded-full bg-white border border-slate-200 text-indigo-600 hover:bg-indigo-50 shrink-0"
+                              className="p-1.5 rounded-full bg-linen-50 border border-cocoa-400/15 text-peach-600 hover:bg-peach-50 shrink-0 shadow-clay-sm"
                             >
                               <Volume2 className="w-3.5 h-3.5" />
                             </button>
@@ -910,11 +1015,11 @@ export default function StudyPage() {
           )}
 
           {plan.newWords.length === 0 ? (
-            <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-slate-500">
+            <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
               Bạn đã học hết các từ HSK 2 hiện có ở trạng thái mới! Hãy bấm &quot;Đồng bộ kho HSK 2 (3.0)&quot; hoặc &quot;AI Bổ sung +25 từ HSK 2&quot; ở trên.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {plan.newWords.map((w) => {
                 const learned = learnedNewIds.has(w.id);
                 const deep = deepDives[w.id];
@@ -923,61 +1028,63 @@ export default function StudyPage() {
                 return (
                   <div
                     key={w.id}
-                    className={`bg-white rounded-xl border p-5 shadow-sm space-y-3 ${
-                      learned ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200'
+                    className={`p-6 space-y-3.5 ${
+                      learned ? 'clay-card-sage' : 'clay-card-hover'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl font-bold text-slate-900 font-chinese">{w.word}</span>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-2xl font-bold text-cocoa-900 font-chinese">{w.word}</span>
                           <button
                             onClick={() => speakChinese(w.word)}
-                            className="p-1.5 rounded-full bg-slate-100 hover:bg-indigo-100 text-indigo-600"
+                            className="p-2 rounded-full bg-peach-100/90 hover:bg-peach-200/80 text-peach-600 shadow-clay-sm transition"
                           >
                             <Volume2 className="w-4 h-4" />
                           </button>
                         </div>
-                        <div className="text-sm text-indigo-600 font-medium">{w.pinyin}</div>
-                        <div className="text-sm text-slate-700 mt-1 font-medium">{w.meaning}</div>
+                        <div className="text-sm text-peach-600 font-bold mt-0.5">{w.pinyin}</div>
+                        <div className="text-sm text-cocoa-700 mt-1 font-bold">{w.meaning}</div>
                       </div>
                       {w.partOfSpeech && (
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-xs">
+                        <span className="px-3 py-1 rounded-full bg-linen-200/90 text-cocoa-600 text-xs font-bold">
                           {w.partOfSpeech}
                         </span>
                       )}
                     </div>
 
                     {deep && (
-                      <div className="p-3 rounded-lg bg-indigo-50/70 border border-indigo-100 text-xs space-y-2 text-slate-700">
+                      <div className="p-4 rounded-[20px] bg-peach-50/90 border border-peach-200/70 text-xs space-y-2 text-cocoa-700 shadow-clay-sm">
                         <div>
-                          <span className="font-semibold text-indigo-800">Bộ thủ / Cấu tạo: </span>
+                          <span className="font-extrabold text-peach-700">Bộ thủ / Cấu tạo: </span>
                           {deep.deepDive.radicalAnalysis}
                         </div>
                         <div>
-                          <span className="font-semibold text-indigo-800">Mẹo nhớ sâu: </span>
+                          <span className="font-extrabold text-peach-700">Mẹo nhớ sâu: </span>
                           {deep.deepDive.memoryHook}
                         </div>
                         {deep.deepDive.collocations?.length > 0 && (
                           <div>
-                            <span className="font-semibold text-indigo-800">Cụm từ hay dùng: </span>
+                            <span className="font-extrabold text-peach-700">Cụm từ hay dùng: </span>
                             {deep.deepDive.collocations
                               .map((c) => `${c.phrase} (${c.pinyin}: ${c.meaning})`)
                               .join(' • ')}
                           </div>
                         )}
                         {deep.examples?.length > 0 && (
-                          <div className="space-y-1 pt-1 border-t border-indigo-100">
-                            <span className="font-semibold text-indigo-800">Ví dụ:</span>
+                          <div className="space-y-1.5 pt-2 border-t border-peach-200/60">
+                            <span className="font-extrabold text-peach-700">Ví dụ:</span>
                             {deep.examples.map((ex, idx) => (
                               <div key={idx} className="flex items-start justify-between gap-2">
                                 <div>
-                                  <div className="font-medium text-slate-900">{ex.chinese}</div>
-                                  <div className="text-slate-500">{ex.pinyin} — {ex.vietnamese}</div>
+                                  <div className="font-bold text-cocoa-900 font-chinese">{ex.chinese}</div>
+                                  <div className="text-cocoa-500">
+                                    {ex.pinyin} — {ex.vietnamese}
+                                  </div>
                                 </div>
                                 <button
                                   onClick={() => speakChinese(ex.chinese)}
-                                  className="p-1 text-indigo-600 hover:bg-indigo-100 rounded"
+                                  className="p-1.5 text-peach-600 hover:bg-peach-100 rounded-full"
                                 >
                                   <Volume2 className="w-3.5 h-3.5" />
                                 </button>
@@ -988,23 +1095,25 @@ export default function StudyPage() {
                       </div>
                     )}
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between pt-3 border-t border-cocoa-400/15">
                       <button
                         onClick={() => handleDeepDive(w.id)}
                         disabled={isLoadingDeep}
-                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 text-xs font-extrabold text-peach-600 hover:text-peach-800 disabled:opacity-50"
                       >
                         <Sparkles className="w-3.5 h-3.5" />
-                        <span>{isLoadingDeep ? 'AI đang phân tích...' : deep ? 'Đã phân tích' : 'Phân tích nhớ sâu (AI)'}</span>
+                        <span>
+                          {isLoadingDeep ? 'AI đang phân tích...' : deep ? 'Đã phân tích' : 'Phân tích nhớ sâu (AI)'}
+                        </span>
                       </button>
 
                       <button
                         onClick={() => handleMarkNewWordLearned(w.id)}
                         disabled={learned}
-                        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[16px] text-xs font-extrabold transition ${
                           learned
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : 'bg-slate-900 hover:bg-indigo-600 text-white'
+                            ? 'bg-sage-100 text-sage-700 border border-sage-300/60'
+                            : 'clay-btn-dark'
                         }`}
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1021,19 +1130,19 @@ export default function StudyPage() {
 
       {/* CHẶNG 3: NGỮ PHÁP TRỌNG TÂM */}
       {activePhase === 3 && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex items-center justify-between">
+        <div className="space-y-5">
+          <div className="clay-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-slate-800">
+              <h2 className="text-lg font-extrabold text-cocoa-900">
                 Chặng 3: Ngữ pháp trọng tâm HSK 2 (3.0) hôm nay
               </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-cocoa-500 mt-1">
                 Đọc kỹ công thức, lưu ý lỗi sai thường gặp để áp dụng ngay ở Chặng 4.
               </p>
             </div>
             <button
               onClick={() => setActivePhase(4)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium"
+              className="clay-btn-dark inline-flex items-center gap-1.5 px-5 py-2.5 text-sm self-start sm:self-auto"
             >
               <span>Sang Chặng 4: Luyện viết AI</span>
               <ArrowRight className="w-4 h-4" />
@@ -1041,57 +1150,57 @@ export default function StudyPage() {
           </div>
 
           {plan.grammarPoints.map((g) => (
-            <div key={g.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+            <div key={g.id} className="clay-card p-6 sm:p-7 space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                  <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-peach-100 text-peach-700 border border-peach-200/70">
                     Unit {g.unitNumber}
                   </span>
-                  <h3 className="text-lg font-bold text-slate-900 mt-1">{g.title}</h3>
+                  <h3 className="text-lg font-extrabold text-cocoa-900 mt-2">{g.title}</h3>
                 </div>
                 <button
                   onClick={() => handleMarkGrammar(g.id, 'mastered')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                  className={`px-4 py-2 rounded-[16px] text-xs font-extrabold transition ${
                     grammarDoneIds.has(g.id)
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                      ? 'bg-sage-100 text-sage-700 border border-sage-300/60 shadow-clay-sm'
+                      : 'clay-btn-peach'
                   }`}
                 >
                   {grammarDoneIds.has(g.id) ? 'Đã nắm vững ✓' : 'Đánh dấu đã hiểu'}
                 </button>
               </div>
 
-              <div className="p-3 rounded-lg bg-slate-900 text-amber-300 font-mono text-sm">
-                {g.pattern}
-              </div>
+              <div className="clay-formula">{g.pattern}</div>
 
-              <p className="text-sm text-slate-700 leading-relaxed">{g.explanation}</p>
+              <p className="text-sm text-cocoa-700 leading-relaxed">{g.explanation}</p>
 
               {g.commonMistakes && (
-                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div className="p-3.5 rounded-[20px] bg-honey-100/85 border border-honey-200/80 text-honey-700 text-xs flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-honey-500" />
                   <div>
-                    <span className="font-semibold">Lỗi hay gặp: </span>
+                    <span className="font-extrabold">Lỗi hay gặp: </span>
                     {g.commonMistakes}
                   </div>
                 </div>
               )}
 
-              <div className="space-y-2">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Ví dụ minh họa</div>
+              <div className="space-y-2.5">
+                <div className="text-xs font-extrabold text-cocoa-500 uppercase tracking-wider">
+                  Ví dụ minh họa
+                </div>
                 {(g.examples || []).map((ex, idx) => (
                   <div
                     key={idx}
-                    className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between gap-3"
+                    className="clay-inset p-3.5 flex items-center justify-between gap-3"
                   >
                     <div>
-                      <div className="font-semibold text-slate-900 text-base">{ex.chinese}</div>
-                      <div className="text-xs text-indigo-600">{ex.pinyin}</div>
-                      <div className="text-xs text-slate-600 mt-0.5">{ex.vietnamese}</div>
+                      <div className="font-bold text-cocoa-900 text-base font-chinese">{ex.chinese}</div>
+                      <div className="text-xs text-peach-600 font-bold">{ex.pinyin}</div>
+                      <div className="text-xs text-cocoa-600 mt-0.5">{ex.vietnamese}</div>
                     </div>
                     <button
                       onClick={() => speakChinese(ex.chinese)}
-                      className="p-2 rounded-full bg-white border border-slate-200 hover:bg-indigo-50 text-indigo-600"
+                      className="p-2 rounded-full bg-linen-50 border border-cocoa-400/20 hover:bg-peach-50 text-peach-600 shadow-clay-sm shrink-0"
                     >
                       <Volume2 className="w-4 h-4" />
                     </button>
@@ -1106,34 +1215,36 @@ export default function StudyPage() {
       {/* CHẶNG 4: LUYỆN VIẾT KẾT HỢP & AI CHẤM BÀI CÁ NHÂN HÓA */}
       {activePhase === 4 && (
         <div className="space-y-5">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="clay-card p-6 sm:p-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-bold text-slate-800">
+              <h2 className="text-lg font-extrabold text-cocoa-900">
                 Chặng 4: Luyện viết kết hợp (Từ mới + Từ cũ + Ngữ pháp) & AI Đánh giá
               </h2>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-cocoa-500 mt-1">
                 Viết ra giấy trước, rồi gõ câu tiếng Trung vào ô bên dưới để Gemini chấm điểm & nhận xét cá nhân hóa.
               </p>
             </div>
             <button
               onClick={handleGenerateMixed}
               disabled={generatingMixed}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition disabled:opacity-50 shrink-0"
+              className="clay-btn-peach inline-flex items-center gap-2 px-5 py-3 text-sm shrink-0"
             >
               <Sparkles className="w-4 h-4" />
-              <span>{generatingMixed ? 'AI đang soạn đề...' : mixedData ? 'Tạo bộ câu mới' : 'Tạo bài tập kết hợp'}</span>
+              <span>
+                {generatingMixed ? 'AI đang soạn đề...' : mixedData ? 'Tạo bộ câu mới' : 'Tạo bài tập kết hợp'}
+              </span>
             </button>
           </div>
 
           {mixedData && (
             <div className="space-y-4">
               {batchSummary && (
-                <div className="bg-indigo-600 text-white rounded-xl p-5 shadow-sm space-y-1.5">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-indigo-100">
-                    Kết quả chấm toàn bài (1 lần gọi AI)
+                <div className="rounded-[28px] bg-gradient-to-br from-peach-500 to-peach-600 text-linen-50 p-6 shadow-clay-peach border border-peach-300/40 space-y-1.5">
+                  <div className="text-xs font-extrabold uppercase tracking-wider text-peach-100">
+                    Kết quả chấm toàn bài (AI)
                   </div>
-                  <div className="text-2xl font-extrabold">Điểm tổng: {batchSummary.overallScore}/100</div>
-                  <p className="text-sm text-indigo-50">{batchSummary.overallComment}</p>
+                  <div className="text-3xl font-extrabold">Điểm tổng: {batchSummary.overallScore}/100</div>
+                  <p className="text-sm text-peach-50">{batchSummary.overallComment}</p>
                 </div>
               )}
 
@@ -1141,12 +1252,14 @@ export default function StudyPage() {
                 const key = `tr-${i}`;
                 const evalRes = evaluations[key];
                 return (
-                  <div key={key} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3">
+                  <div key={key} className="clay-card p-6 space-y-3.5">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="text-xs font-semibold text-indigo-600">Câu dịch {i + 1}</span>
-                        <div className="text-base font-bold text-slate-900 mt-0.5">{ex.vietnamese}</div>
-                        <div className="text-xs text-slate-500 mt-1">
+                        <span className="text-xs font-extrabold text-peach-600 uppercase tracking-wider">
+                          Câu dịch {i + 1}
+                        </span>
+                        <div className="text-base font-extrabold text-cocoa-900 mt-1">{ex.vietnamese}</div>
+                        <div className="text-xs text-cocoa-500 mt-1 font-semibold">
                           Từ mục tiêu: {ex.targetWords.join(', ')} • Gợi ý: {ex.grammarHint}
                         </div>
                       </div>
@@ -1157,38 +1270,44 @@ export default function StudyPage() {
                       value={userInputs[key] || ''}
                       onChange={(e) => setUserInputs((p) => ({ ...p, [key]: e.target.value }))}
                       placeholder="Nhập câu tiếng Trung bạn viết..."
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full clay-input px-4 py-3 text-sm font-chinese"
                     />
 
                     {evalRes && (
-                      <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                      <div className="clay-inset p-4 space-y-2 text-xs">
                         <div className="flex items-center justify-between">
                           <span
-                            className={`px-2.5 py-0.5 rounded-full font-bold ${
+                            className={`px-3 py-1 rounded-full font-extrabold ${
                               evalRes.score >= 80
-                                ? 'bg-emerald-100 text-emerald-800'
+                                ? 'bg-sage-100 text-sage-800'
                                 : evalRes.score >= 60
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-rose-100 text-rose-800'
+                                  ? 'bg-honey-100 text-honey-700'
+                                  : 'bg-berry-100 text-berry-700'
                             }`}
                           >
                             Điểm: {evalRes.score}/100
                           </span>
                           <button
                             onClick={() => speakChinese(evalRes.correctedChinese)}
-                            className="inline-flex items-center gap-1 text-indigo-600 font-medium"
+                            className="inline-flex items-center gap-1 text-peach-600 font-bold hover:text-peach-800"
                           >
                             <Volume2 className="w-3.5 h-3.5" />
                             <span>Nghe câu chuẩn</span>
                           </button>
                         </div>
-                        <div className="text-sm font-bold text-indigo-700">
+                        <div className="text-sm font-extrabold text-peach-700 font-chinese">
                           Câu chuẩn: {evalRes.correctedChinese}{' '}
-                          <span className="font-normal text-slate-500">({evalRes.correctedPinyin})</span>
+                          <span className="font-sans font-semibold text-cocoa-500">
+                            ({evalRes.correctedPinyin})
+                          </span>
                         </div>
-                        <div><strong>Ngữ pháp:</strong> {evalRes.grammarFeedback}</div>
-                        <div><strong>Từ vựng:</strong> {evalRes.vocabFeedback}</div>
-                        <div className="p-2 rounded bg-indigo-50 text-indigo-900">
+                        <div>
+                          <strong>Ngữ pháp:</strong> {evalRes.grammarFeedback}
+                        </div>
+                        <div>
+                          <strong>Từ vựng:</strong> {evalRes.vocabFeedback}
+                        </div>
+                        <div className="p-2.5 rounded-[14px] bg-peach-100/75 text-peach-800 font-semibold">
                           <strong>Mẹo cá nhân hóa:</strong> {evalRes.personalizedTip}
                         </div>
                       </div>
@@ -1201,11 +1320,13 @@ export default function StudyPage() {
                 const key = `fp-${i}`;
                 const evalRes = evaluations[key];
                 return (
-                  <div key={key} className="bg-white rounded-xl border border-indigo-200 shadow-sm p-5 space-y-3">
+                  <div key={key} className="clay-card-sage p-6 space-y-3.5">
                     <div>
-                      <span className="text-xs font-semibold text-emerald-700">Đặt câu tự do {i + 1}</span>
-                      <div className="text-base font-bold text-slate-900 mt-0.5">{fp.instruction}</div>
-                      <div className="text-xs text-slate-500 mt-1">
+                      <span className="text-xs font-extrabold text-sage-700 uppercase tracking-wider">
+                        Đặt câu tự do {i + 1}
+                      </span>
+                      <div className="text-base font-extrabold text-cocoa-900 mt-1">{fp.instruction}</div>
+                      <div className="text-xs text-cocoa-600 mt-1 font-semibold">
                         Từ bắt buộc: {fp.targetWords.join(', ')} • Ngữ pháp: {fp.grammarTitle}
                       </div>
                     </div>
@@ -1214,16 +1335,20 @@ export default function StudyPage() {
                       value={userInputs[key] || ''}
                       onChange={(e) => setUserInputs((p) => ({ ...p, [key]: e.target.value }))}
                       placeholder="Tự đặt câu tiếng Trung của bạn..."
-                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full clay-input-sage px-4 py-3 text-sm font-chinese"
                     />
                     {evalRes && (
-                      <div className="p-4 rounded-lg bg-slate-50 border border-slate-200 space-y-2 text-xs">
-                        <div className="font-bold text-indigo-700">
+                      <div className="bg-linen-50/90 rounded-[20px] p-4 border border-sage-200/70 space-y-2 text-xs">
+                        <div className="font-extrabold text-sage-700 text-sm">
                           Điểm: {evalRes.score}/100 • Gợi ý chuẩn: {evalRes.correctedChinese} ({evalRes.correctedPinyin})
                         </div>
-                        <div><strong>Ngữ pháp:</strong> {evalRes.grammarFeedback}</div>
-                        <div><strong>Từ vựng:</strong> {evalRes.vocabFeedback}</div>
-                        <div className="p-2 rounded bg-indigo-50 text-indigo-900">
+                        <div>
+                          <strong>Ngữ pháp:</strong> {evalRes.grammarFeedback}
+                        </div>
+                        <div>
+                          <strong>Từ vựng:</strong> {evalRes.vocabFeedback}
+                        </div>
+                        <div className="p-2.5 rounded-[14px] bg-sage-100/80 text-sage-800 font-semibold">
                           <strong>Lời khuyên:</strong> {evalRes.personalizedTip}
                         </div>
                       </div>
@@ -1232,10 +1357,10 @@ export default function StudyPage() {
                 );
               })}
 
-              <div className="sticky bottom-4 bg-white/95 backdrop-blur border border-indigo-200 rounded-xl p-4 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="text-sm text-slate-700 font-medium">
+              <div className="sticky bottom-4 bg-linen-50/95 backdrop-blur-md border border-peach-300/50 rounded-[26px] p-4 sm:p-5 shadow-clay flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-sm text-cocoa-700 font-bold">
                   Đã viết:{' '}
-                  <span className="font-bold text-indigo-700">
+                  <span className="font-extrabold text-peach-700">
                     {Object.values(userInputs).filter((v) => v?.trim()).length} /{' '}
                     {mixedData.translationExercises.length + mixedData.freePrompts.length}
                   </span>{' '}
@@ -1244,42 +1369,48 @@ export default function StudyPage() {
                 <button
                   onClick={handleEvaluateAll}
                   disabled={batchGrading}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold shadow-sm transition disabled:opacity-50"
+                  className="clay-btn-peach inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>{batchGrading ? 'AI đang chấm toàn bộ bài...' : 'AI Chấm tất cả các câu (1 lần gọi)'}</span>
+                  <span>{batchGrading ? 'AI đang chấm toàn bộ bài...' : 'AI Chấm tất cả các câu'}</span>
                 </button>
               </div>
             </div>
           )}
 
           {/* Tổng kết buổi học */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div className="clay-card-honey p-6 sm:p-7 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <Award className="w-5 h-5 text-amber-500" />
+                <h3 className="text-base font-extrabold text-cocoa-900 flex items-center gap-2">
+                  <Award className="w-5 h-5 text-honey-500" />
                   <span>Hoàn thành buổi học Ngày {plan.profile.currentDayNumber}</span>
                 </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <p className="text-xs text-cocoa-600 mt-1">
                   Lưu tiến độ và để Gemini tổng kết cá nhân hóa cho buổi học ngày mai.
                 </p>
               </div>
               <button
                 onClick={handleCompleteDay}
                 disabled={completingDay}
-                className="px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition disabled:opacity-50"
+                className="clay-btn-sage px-5 py-3 text-sm"
               >
                 {completingDay ? 'Đang tổng kết...' : 'Lưu buổi học & Nhận xét AI'}
               </button>
             </div>
 
             {dailyCoachResult && (
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2 text-sm text-emerald-950">
-                <div className="font-bold text-base">{dailyCoachResult.headline}</div>
-                <div><strong>Điểm mạnh:</strong> {dailyCoachResult.strengths}</div>
-                <div><strong>Cần cải thiện:</strong> {dailyCoachResult.areasToImprove}</div>
-                <div><strong>Chiến lược ngày mai:</strong> {dailyCoachResult.tomorrowFocus}</div>
+              <div className="p-5 rounded-[22px] bg-linen-50/95 border border-sage-300/60 space-y-2 text-sm text-cocoa-800 shadow-clay-sm">
+                <div className="font-extrabold text-base text-sage-700">{dailyCoachResult.headline}</div>
+                <div>
+                  <strong>Điểm mạnh:</strong> {dailyCoachResult.strengths}
+                </div>
+                <div>
+                  <strong>Cần cải thiện:</strong> {dailyCoachResult.areasToImprove}
+                </div>
+                <div>
+                  <strong>Chiến lược ngày mai:</strong> {dailyCoachResult.tomorrowFocus}
+                </div>
               </div>
             )}
           </div>

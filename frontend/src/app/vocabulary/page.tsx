@@ -13,6 +13,7 @@ import {
   Check,
   Filter,
   Volume2,
+  BookOpen,
 } from 'lucide-react';
 import { speakChinese } from '@/lib/speech';
 
@@ -219,12 +220,17 @@ export default function VocabularyPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto py-2">
+    <div className="space-y-6 max-w-5xl mx-auto pb-12">
       {/* Header trang */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+      <div className="clay-card p-6 sm:p-7 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Quản lý Từ vựng</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-2xl font-extrabold text-cocoa-900 flex items-center gap-2.5">
+            <span className="w-10 h-10 rounded-[16px] bg-peach-100 text-peach-600 border border-peach-200/70 shadow-clay-sm flex items-center justify-center">
+              <BookOpen className="w-5 h-5" />
+            </span>
+            <span>Quản lý Từ vựng</span>
+          </h1>
+          <p className="text-sm text-cocoa-500 mt-1.5">
             Lưu trữ từ vựng cá nhân, làm phong phú vốn từ để sinh các câu luyện tập.
           </p>
         </div>
@@ -232,24 +238,36 @@ export default function VocabularyPage() {
         {/* Các nút mở Tabs nhập dữ liệu */}
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => { setActiveTab('single'); setErrorMsg(''); setSuccessMsg(''); }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
+            onClick={() => {
+              setActiveTab('single');
+              setErrorMsg('');
+              setSuccessMsg('');
+            }}
+            className="clay-btn-peach flex items-center gap-1.5 px-4 py-2.5 text-sm"
           >
             <Plus className="w-4 h-4" />
             <span>Thêm thủ công</span>
           </button>
           <button
-            onClick={() => { setActiveTab('bulk'); setErrorMsg(''); setSuccessMsg(''); }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition"
+            onClick={() => {
+              setActiveTab('bulk');
+              setErrorMsg('');
+              setSuccessMsg('');
+            }}
+            className="clay-btn-cream flex items-center gap-1.5 px-4 py-2.5 text-sm"
           >
-            <FileText className="w-4 h-4" />
+            <FileText className="w-4 h-4 text-peach-600" />
             <span>Paste nhiều từ</span>
           </button>
           <button
-            onClick={() => { setActiveTab('csv'); setErrorMsg(''); setSuccessMsg(''); }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition"
+            onClick={() => {
+              setActiveTab('csv');
+              setErrorMsg('');
+              setSuccessMsg('');
+            }}
+            className="clay-btn-cream flex items-center gap-1.5 px-4 py-2.5 text-sm"
           >
-            <Upload className="w-4 h-4" />
+            <Upload className="w-4 h-4 text-sage-600" />
             <span>Import CSV</span>
           </button>
         </div>
@@ -257,59 +275,66 @@ export default function VocabularyPage() {
 
       {/* Thông báo Thành công / Thất bại */}
       {successMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg text-sm flex justify-between items-center">
+        <div className="p-4 bg-sage-100/90 border border-sage-300/60 text-sage-800 rounded-[22px] text-sm font-bold flex justify-between items-center shadow-clay-sm">
           <span>{successMsg}</span>
-          <button onClick={() => setSuccessMsg('')}><X className="w-4 h-4" /></button>
+          <button onClick={() => setSuccessMsg('')} className="p-1 hover:bg-sage-200/60 rounded-full">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
       {errorMsg && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-sm flex justify-between items-center">
+        <div className="p-4 bg-berry-100/90 border border-berry-200 text-berry-700 rounded-[22px] text-sm font-bold flex justify-between items-center shadow-clay-sm">
           <span>{errorMsg}</span>
-          <button onClick={() => setErrorMsg('')}><X className="w-4 h-4" /></button>
+          <button onClick={() => setErrorMsg('')} className="p-1 hover:bg-berry-200/60 rounded-full">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
       {/* TAB A: Nhập thủ công */}
       {activeTab === 'single' && (
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex justify-between items-center border-b pb-3">
-            <h2 className="font-semibold text-slate-800">A. Nhập từ vựng thủ công</h2>
-            <button onClick={() => setActiveTab('list')} className="text-slate-400 hover:text-slate-600">
+        <div className="clay-card p-6 sm:p-7 space-y-5 animate-fade-in">
+          <div className="flex justify-between items-center border-b border-cocoa-400/15 pb-4">
+            <h2 className="font-extrabold text-cocoa-900">A. Nhập từ vựng thủ công</h2>
+            <button
+              onClick={() => setActiveTab('list')}
+              className="p-1.5 rounded-full text-cocoa-400 hover:text-cocoa-700 hover:bg-linen-200/80 transition"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           <form onSubmit={handleCreateSingle} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Chinese Word (*)</label>
+              <label className="block text-xs font-bold text-cocoa-700 mb-1.5">Chinese Word (*)</label>
               <input
                 type="text"
                 required
                 placeholder="Ví dụ: 学习"
                 value={singleForm.word}
                 onChange={(e) => setSingleForm({ ...singleForm, word: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg text-sm font-chinese focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full clay-input px-4 py-2.5 text-sm font-chinese"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Vietnamese Meaning (*)</label>
+              <label className="block text-xs font-bold text-cocoa-700 mb-1.5">Vietnamese Meaning (*)</label>
               <input
                 type="text"
                 required
                 placeholder="Ví dụ: học"
                 value={singleForm.meaning}
                 onChange={(e) => setSingleForm({ ...singleForm, meaning: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full clay-input px-4 py-2.5 text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Từ loại</label>
+              <label className="block text-xs font-bold text-cocoa-700 mb-1.5">Từ loại</label>
               <select
                 value={singleForm.partOfSpeech}
                 onChange={(e) => setSingleForm({ ...singleForm, partOfSpeech: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                className="w-full clay-input px-4 py-2.5 text-sm"
               >
                 <option value="">Chưa phân loại</option>
                 {PART_OF_SPEECH_OPTIONS.map((pos) => (
@@ -321,22 +346,22 @@ export default function VocabularyPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Pinyin (Optional)</label>
+              <label className="block text-xs font-bold text-cocoa-700 mb-1.5">Pinyin (Optional)</label>
               <input
                 type="text"
                 placeholder="Để trống sẽ tự động sinh Pinyin (xuéxí)"
                 value={singleForm.pinyin}
                 onChange={(e) => setSingleForm({ ...singleForm, pinyin: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full clay-input px-4 py-2.5 text-sm"
               />
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Level (Optional)</label>
+              <label className="block text-xs font-bold text-cocoa-700 mb-1.5">Level (Optional)</label>
               <select
                 value={singleForm.level}
                 onChange={(e) => setSingleForm({ ...singleForm, level: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                className="w-full clay-input px-4 py-2.5 text-sm"
               >
                 <option value="Beginner">Beginner</option>
                 <option value="HSK1">HSK1</option>
@@ -346,18 +371,15 @@ export default function VocabularyPage() {
               </select>
             </div>
 
-            <div className="sm:col-span-2 flex justify-end gap-2 pt-2">
+            <div className="sm:col-span-2 flex justify-end gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('list')}
-                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg"
+                className="clay-btn-cream px-5 py-2.5 text-sm"
               >
                 Hủy
               </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-medium"
-              >
+              <button type="submit" className="clay-btn-peach px-5 py-2.5 text-sm">
                 Lưu từ vựng
               </button>
             </div>
@@ -367,61 +389,73 @@ export default function VocabularyPage() {
 
       {/* TAB B: Paste nhiều từ */}
       {activeTab === 'bulk' && (
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex justify-between items-center border-b pb-3">
-            <h2 className="font-semibold text-slate-800">B. Paste nhiều từ vựng (Mỗi dòng 1 từ)</h2>
-            <button onClick={() => setActiveTab('list')} className="text-slate-400 hover:text-slate-600">
+        <div className="clay-card p-6 sm:p-7 space-y-4 animate-fade-in">
+          <div className="flex justify-between items-center border-b border-cocoa-400/15 pb-4">
+            <h2 className="font-extrabold text-cocoa-900">B. Paste nhiều từ vựng (Mỗi dòng 1 từ)</h2>
+            <button
+              onClick={() => setActiveTab('list')}
+              className="p-1.5 rounded-full text-cocoa-400 hover:text-cocoa-700 hover:bg-linen-200/80 transition"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Nhập danh sách từ vựng. Định dạng đơn giản: mỗi dòng 1 từ tiếng Trung. Hoặc mở rộng với dấu | (ví dụ: <code className="bg-slate-100 px-1">学习 | học | Động từ | xuéxí | HSK1</code>).
+            <p className="text-xs text-cocoa-600">
+              Nhập danh sách từ vựng. Định dạng đơn giản: mỗi dòng 1 từ tiếng Trung. Hoặc mở rộng với dấu | (ví dụ:{' '}
+              <code className="bg-linen-200 px-1.5 py-0.5 rounded-md text-cocoa-800">
+                学习 | học | Động từ | xuéxí | HSK1
+              </code>
+              ).
             </p>
 
             <textarea
               rows={6}
-              placeholder="学习 | học | Động từ&#10;中文 | tiếng Trung | Danh từ&#10;朋友 | bạn bè | Danh từ"
+              placeholder={'学习 | học | Động từ\n中文 | tiếng Trung | Danh từ\n朋友 | bạn bè | Danh từ'}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
-              className="w-full p-3 border rounded-lg text-sm font-chinese focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full clay-input p-4 text-sm font-chinese"
             />
 
             {/* Preview danh sách trước khi import */}
             {bulkPreview.length > 0 && (
-              <div className="bg-slate-50 p-4 rounded-lg border text-xs space-y-2 max-h-40 overflow-y-auto">
-                <span className="font-semibold text-slate-700">Xem trước (Preview {bulkPreview.length} từ):</span>
+              <div className="clay-inset p-4 text-xs space-y-2.5 max-h-44 overflow-y-auto">
+                <span className="font-extrabold text-cocoa-700">
+                  Xem trước (Preview {bulkPreview.length} từ):
+                </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {bulkPreview.map((item, idx) => (
-                    <div key={idx} className="bg-white p-2 border rounded flex justify-between items-center gap-2">
+                    <div
+                      key={idx}
+                      className="bg-linen-50 p-2.5 border border-cocoa-400/15 rounded-[14px] flex justify-between items-center gap-2 shadow-clay-sm"
+                    >
                       <div className="flex items-center gap-1.5">
-                        <span className="font-chinese font-bold text-slate-800">{item.word}</span>
+                        <span className="font-chinese font-bold text-cocoa-900">{item.word}</span>
                         {item.partOfSpeech && (
-                          <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-medium">
+                          <span className="px-2 py-0.5 rounded-full bg-peach-100 text-peach-700 text-[10px] font-bold">
                             {item.partOfSpeech}
                           </span>
                         )}
                       </div>
-                      <span className="text-slate-500 truncate">{item.meaning}</span>
+                      <span className="text-cocoa-500 truncate">{item.meaning}</span>
                     </div>
                   ))}
                 </div>
               </div>
             )}
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('list')}
-                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg"
+                className="clay-btn-cream px-5 py-2.5 text-sm"
               >
                 Hủy
               </button>
               <button
                 onClick={handleBulkSubmit}
                 disabled={bulkPreview.length === 0}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
+                className="clay-btn-peach px-5 py-2.5 text-sm"
               >
                 Xác nhận Import ({bulkPreview.length} từ)
               </button>
@@ -432,39 +466,45 @@ export default function VocabularyPage() {
 
       {/* TAB C: Import CSV */}
       {activeTab === 'csv' && (
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex justify-between items-center border-b pb-3">
-            <h2 className="font-semibold text-slate-800">C. Import CSV</h2>
-            <button onClick={() => setActiveTab('list')} className="text-slate-400 hover:text-slate-600">
+        <div className="clay-card p-6 sm:p-7 space-y-4 animate-fade-in">
+          <div className="flex justify-between items-center border-b border-cocoa-400/15 pb-4">
+            <h2 className="font-extrabold text-cocoa-900">C. Import CSV</h2>
+            <button
+              onClick={() => setActiveTab('list')}
+              className="p-1.5 rounded-full text-cocoa-400 hover:text-cocoa-700 hover:bg-linen-200/80 transition"
+            >
               <X className="w-5 h-5" />
             </button>
           </div>
 
           <div className="space-y-3">
-            <p className="text-xs text-slate-500">
-              Định dạng CSV yêu cầu các cột: <code className="bg-slate-100 px-1 font-mono">word,meaning,partOfSpeech,pinyin,level</code>
+            <p className="text-xs text-cocoa-600">
+              Định dạng CSV yêu cầu các cột:{' '}
+              <code className="bg-linen-200 px-1.5 py-0.5 rounded-md font-mono text-cocoa-800">
+                word,meaning,partOfSpeech,pinyin,level
+              </code>
             </p>
 
             <textarea
               rows={5}
-              placeholder="word,meaning,partOfSpeech,pinyin,level&#10;学习,học,Động từ,xuéxí,HSK1&#10;中文,tiếng Trung,Danh từ,Zhōngwén,HSK1"
+              placeholder={'word,meaning,partOfSpeech,pinyin,level\n学习,học,Động từ,xuéxí,HSK1\n中文,tiếng Trung,Danh từ,Zhōngwén,HSK1'}
               value={csvContent}
               onChange={(e) => setCsvContent(e.target.value)}
-              className="w-full p-3 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full clay-input p-4 text-sm font-mono"
             />
 
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="flex justify-end gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setActiveTab('list')}
-                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg"
+                className="clay-btn-cream px-5 py-2.5 text-sm"
               >
                 Hủy
               </button>
               <button
                 onClick={handleCsvSubmit}
                 disabled={!csvContent.trim()}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
+                className="clay-btn-peach px-5 py-2.5 text-sm"
               >
                 Import CSV Dữ liệu
               </button>
@@ -474,26 +514,26 @@ export default function VocabularyPage() {
       )}
 
       {/* Bảng từ vựng Vocabulary List */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden space-y-4">
+      <div className="clay-card overflow-hidden">
         {/* Bộ lọc Tìm kiếm & Level */}
-        <div className="p-4 sm:p-6 border-b flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="p-5 sm:p-6 border-b border-cocoa-400/15 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="relative w-full sm:w-80">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+            <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-cocoa-400" />
             <input
               type="text"
               placeholder="Tìm kiếm từ tiếng Trung hoặc nghĩa..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full clay-input pl-10 pr-4 py-2.5 text-sm"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
-            <Filter className="w-4 h-4 text-slate-400" />
+          <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+            <Filter className="w-4 h-4 text-cocoa-400" />
             <select
               value={partOfSpeechFilter}
               onChange={(e) => setPartOfSpeechFilter(e.target.value)}
-              className="px-3 py-2 border rounded-lg text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="clay-input px-3.5 py-2.5 text-sm"
             >
               <option value="ALL">Tất cả từ loại</option>
               {PART_OF_SPEECH_OPTIONS.map((pos) => (
@@ -506,7 +546,7 @@ export default function VocabularyPage() {
             <select
               value={levelFilter}
               onChange={(e) => setLevelFilter(e.target.value)}
-              className="px-3 py-2 border rounded-lg text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="clay-input px-3.5 py-2.5 text-sm"
             >
               <option value="ALL">Tất cả cấp độ</option>
               <option value="Beginner">Beginner</option>
@@ -520,27 +560,27 @@ export default function VocabularyPage() {
 
         {/* Bảng Dữ Liệu */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-slate-50 text-slate-700 font-medium border-b text-xs uppercase tracking-wider">
+          <table className="w-full text-left text-sm text-cocoa-600">
+            <thead className="bg-linen-200/65 text-cocoa-700 font-extrabold border-b border-cocoa-400/15 text-xs uppercase tracking-wider">
               <tr>
-                <th className="px-6 py-3">Chinese</th>
-                <th className="px-6 py-3">Từ loại</th>
-                <th className="px-6 py-3">Meaning</th>
-                <th className="px-6 py-3">Pinyin</th>
-                <th className="px-6 py-3">Level</th>
-                <th className="px-6 py-3 text-right">Thao tác</th>
+                <th className="px-6 py-4">Chinese</th>
+                <th className="px-6 py-4">Từ loại</th>
+                <th className="px-6 py-4">Meaning</th>
+                <th className="px-6 py-4">Pinyin</th>
+                <th className="px-6 py-4">Level</th>
+                <th className="px-6 py-4 text-right">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
+            <tbody className="divide-y divide-cocoa-400/15">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
+                  <td colSpan={6} className="px-6 py-10 text-center text-cocoa-400 font-semibold">
                     Đang tải danh sách từ vựng...
                   </td>
                 </tr>
               ) : vocabularies.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400">
+                  <td colSpan={6} className="px-6 py-10 text-center text-cocoa-400 font-semibold">
                     Chưa có từ vựng nào. Hãy bấm &quot;Thêm thủ công&quot; hoặc &quot;Paste nhiều từ&quot; để tạo mới.
                   </td>
                 </tr>
@@ -550,20 +590,20 @@ export default function VocabularyPage() {
 
                   if (isEditing) {
                     return (
-                      <tr key={vocab.id} className="bg-indigo-50/50">
-                        <td className="px-6 py-3 font-chinese font-bold text-lg text-slate-900">
+                      <tr key={vocab.id} className="bg-peach-50/60">
+                        <td className="px-6 py-3 font-chinese font-bold text-lg text-cocoa-900">
                           <input
                             type="text"
                             value={editForm.word}
                             onChange={(e) => setEditForm({ ...editForm, word: e.target.value })}
-                            className="w-full px-2 py-1 border rounded text-sm font-chinese"
+                            className="w-full clay-input px-2.5 py-1.5 text-sm font-chinese"
                           />
                         </td>
                         <td className="px-6 py-3">
                           <select
                             value={editForm.partOfSpeech}
                             onChange={(e) => setEditForm({ ...editForm, partOfSpeech: e.target.value })}
-                            className="px-2 py-1 border rounded text-sm bg-white"
+                            className="clay-input px-2.5 py-1.5 text-sm"
                           >
                             <option value="">Chưa phân loại</option>
                             {PART_OF_SPEECH_OPTIONS.map((pos) => (
@@ -578,7 +618,7 @@ export default function VocabularyPage() {
                             type="text"
                             value={editForm.meaning}
                             onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })}
-                            className="w-full px-2 py-1 border rounded text-sm"
+                            className="w-full clay-input px-2.5 py-1.5 text-sm"
                           />
                         </td>
                         <td className="px-6 py-3">
@@ -586,14 +626,14 @@ export default function VocabularyPage() {
                             type="text"
                             value={editForm.pinyin}
                             onChange={(e) => setEditForm({ ...editForm, pinyin: e.target.value })}
-                            className="w-full px-2 py-1 border rounded text-sm"
+                            className="w-full clay-input px-2.5 py-1.5 text-sm"
                           />
                         </td>
                         <td className="px-6 py-3">
                           <select
                             value={editForm.level}
                             onChange={(e) => setEditForm({ ...editForm, level: e.target.value })}
-                            className="px-2 py-1 border rounded text-sm bg-white"
+                            className="clay-input px-2.5 py-1.5 text-sm"
                           >
                             <option value="Beginner">Beginner</option>
                             <option value="HSK1">HSK1</option>
@@ -606,13 +646,13 @@ export default function VocabularyPage() {
                           <div className="flex justify-end gap-2">
                             <button
                               onClick={() => handleUpdate(vocab.id)}
-                              className="p-1.5 text-emerald-600 hover:bg-emerald-100 rounded"
+                              className="p-2 text-sage-700 bg-sage-100 hover:bg-sage-200 rounded-full transition"
                             >
                               <Check className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => setEditingId(null)}
-                              className="p-1.5 text-slate-400 hover:bg-slate-200 rounded"
+                              className="p-2 text-cocoa-500 bg-linen-200 hover:bg-linen-300 rounded-full transition"
                             >
                               <X className="w-4 h-4" />
                             </button>
@@ -623,15 +663,15 @@ export default function VocabularyPage() {
                   }
 
                   return (
-                    <tr key={vocab.id} className="hover:bg-slate-50 transition-colors">
+                    <tr key={vocab.id} className="hover:bg-linen-100/80 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className="font-chinese font-bold text-lg text-slate-900">{vocab.word}</span>
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-chinese font-bold text-lg text-cocoa-900">{vocab.word}</span>
                           <button
                             type="button"
                             onClick={() => speakChinese(vocab.word)}
                             title="Nghe phát âm"
-                            className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition"
+                            className="p-1.5 text-cocoa-400 hover:text-peach-600 hover:bg-peach-100 rounded-full transition"
                           >
                             <Volume2 className="w-4 h-4" />
                           </button>
@@ -639,31 +679,31 @@ export default function VocabularyPage() {
                       </td>
                       <td className="px-6 py-4">
                         {vocab.partOfSpeech ? (
-                          <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100 whitespace-nowrap">
+                          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-peach-100/85 text-peach-700 border border-peach-200/70 whitespace-nowrap">
                             {vocab.partOfSpeech}
                           </span>
                         ) : (
-                          <span className="text-slate-400 text-xs">-</span>
+                          <span className="text-cocoa-400 text-xs">-</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 font-medium text-slate-800">{vocab.meaning}</td>
-                      <td className="px-6 py-4 text-slate-500 font-sans">{vocab.pinyin || '-'}</td>
+                      <td className="px-6 py-4 font-bold text-cocoa-800">{vocab.meaning}</td>
+                      <td className="px-6 py-4 text-cocoa-500 font-semibold">{vocab.pinyin || '-'}</td>
                       <td className="px-6 py-4">
-                        <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700 border">
+                        <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-sage-100/80 text-sage-700 border border-sage-200/70">
                           {vocab.level || 'HSK1'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => startEdit(vocab)}
-                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition"
+                            className="p-2 text-cocoa-400 hover:text-peach-600 hover:bg-peach-100/70 rounded-full transition"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => handleDelete(vocab.id, vocab.word)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                            className="p-2 text-cocoa-400 hover:text-berry-700 hover:bg-berry-100/80 rounded-full transition"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>

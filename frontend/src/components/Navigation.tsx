@@ -39,34 +39,41 @@ export default function Navigation() {
   const navItems = isEnglishMode ? englishNavItems : chineseNavItems;
 
   return (
-    <header className="sticky top-0 z-50 bg-white border-b border-slate-200 shadow-sm">
-      <div className="max-w-5xl mx-auto px-4">
+    <header className="sticky top-0 z-50 pt-3 px-3 sm:px-6">
+      <div className="max-w-6xl mx-auto bg-linen-50/88 backdrop-blur-md rounded-[28px] border border-cocoa-400/20 shadow-clay px-4 sm:px-6 py-2.5">
         {/* Hàng 1: Logo + 2 Tab chuyển ngôn ngữ riêng biệt */}
-        <div className="h-14 flex items-center justify-between gap-3">
+        <div className="h-12 flex items-center justify-between gap-3">
           <Link
             href={isEnglishMode ? '/english/dashboard' : '/'}
-            className="flex items-center gap-2 font-bold text-slate-800 text-base sm:text-lg hover:text-indigo-600 transition shrink-0"
+            className="flex items-center gap-2.5 font-extrabold text-cocoa-800 text-base sm:text-lg hover:text-peach-600 transition shrink-0 group"
           >
             <div
-              className={`w-8 h-8 rounded-lg text-white flex items-center justify-center font-bold text-sm ${
-                isEnglishMode ? 'bg-emerald-600' : 'bg-indigo-600'
+              className={`w-10 h-10 rounded-[18px] text-linen-50 flex items-center justify-center font-extrabold text-sm transition-transform duration-200 group-hover:scale-105 ${
+                isEnglishMode
+                  ? 'bg-gradient-to-b from-sage-400 to-sage-500 shadow-clay-sage'
+                  : 'bg-gradient-to-b from-peach-400 to-peach-500 shadow-clay-peach'
               }`}
             >
-              {isEnglishMode ? 'EN' : '写'}
+              {isEnglishMode ? 'EN' : <span className="font-chinese text-base">写</span>}
             </div>
-            <span className="hidden sm:inline">
-              {isEnglishMode ? 'English Studio' : 'Chinese Studio'}
-            </span>
+            <div className="hidden sm:flex flex-col leading-tight">
+              <span className="tracking-tight">
+                {isEnglishMode ? 'English Studio' : 'Chinese Studio'}
+              </span>
+              <span className="text-[11px] font-semibold text-cocoa-400">
+                {isEnglishMode ? 'Cozy A1 → B2' : 'Cozy HSK 2 Paper'}
+              </span>
+            </div>
           </Link>
 
           {/* 2 Tab chuyển Tiếng Trung / Tiếng Anh (mỗi tab vào Dashboard riêng) */}
-          <div className="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
+          <div className="inline-flex p-1.5 rounded-[22px] bg-linen-200/85 border border-cocoa-400/15 shadow-clay-inset gap-1">
             <Link
               href="/"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-[16px] text-xs sm:text-sm font-bold transition-all duration-200 ${
                 !isEnglishMode
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-gradient-to-b from-peach-400 to-peach-500 text-linen-50 shadow-clay-peach'
+                  : 'text-cocoa-600 hover:text-cocoa-900 hover:bg-linen-50/60'
               }`}
             >
               <Languages className="w-3.5 h-3.5" />
@@ -74,10 +81,10 @@ export default function Navigation() {
             </Link>
             <Link
               href="/english/dashboard"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold transition ${
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-[16px] text-xs sm:text-sm font-bold transition-all duration-200 ${
                 isEnglishMode
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
+                  ? 'bg-gradient-to-b from-sage-400 to-sage-500 text-linen-50 shadow-clay-sage'
+                  : 'text-cocoa-600 hover:text-cocoa-900 hover:bg-linen-50/60'
               }`}
             >
               <Languages className="w-3.5 h-3.5" />
@@ -87,7 +94,7 @@ export default function Navigation() {
         </div>
 
         {/* Hàng 2: Menu chức năng theo tab đang chọn */}
-        <nav className="flex items-center gap-1 sm:gap-2 pb-2 overflow-x-auto">
+        <nav className="flex items-center gap-1.5 pt-2.5 mt-2 border-t border-cocoa-400/15 overflow-x-auto pb-0.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -102,12 +109,12 @@ export default function Navigation() {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs sm:text-sm font-medium whitespace-nowrap transition-colors ${
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-[18px] text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-200 ${
                   isActive
                     ? isEnglishMode
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : 'bg-indigo-50 text-indigo-700'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                      ? 'bg-sage-100/95 text-sage-700 border border-sage-300/50 shadow-clay-sm'
+                      : 'bg-peach-100/95 text-peach-700 border border-peach-300/50 shadow-clay-sm'
+                    : 'text-cocoa-600 hover:text-cocoa-900 hover:bg-linen-200/70 border border-transparent'
                 }`}
               >
                 <Icon className="w-4 h-4" />

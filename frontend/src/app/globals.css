@@ -3,34 +3,145 @@
 @tailwind utilities;
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #f5ede1;
+  --foreground: #3b302a;
+  --surface: #fbf7f0;
+  --surface-elevated: #fffdf9;
+  --border-soft: rgba(146, 118, 92, 0.16);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   color: var(--foreground);
-  background: var(--background);
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 12% 10%, rgba(249, 209, 186, 0.42) 0%, transparent 42%),
+    radial-gradient(circle at 88% 14%, rgba(201, 223, 203, 0.44) 0%, transparent 44%),
+    radial-gradient(circle at 52% 92%, rgba(252, 240, 210, 0.45) 0%, transparent 48%);
+  background-attachment: fixed;
+  font-family: 'Nunito', ui-rounded, 'Segoe UI', system-ui, -apple-system, sans-serif;
   min-height: 100vh;
+  position: relative;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle paper grain texture overlay for warm tactile paper feel */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.045;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paperNoise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paperNoise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 220px 220px;
 }
 
 /* Kiểu chữ Hán hiển thị nét chữ đẹp và rõ ràng */
 .font-chinese {
-  font-family: 'Noto Serif SC', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-family: 'Noto Serif SC', 'Microsoft YaHei', 'PingFang SC', serif;
+}
+
+/* Cozy Claymorphism Component Primitives */
+@layer components {
+  .clay-card {
+    @apply bg-linen-50/90 backdrop-blur-sm rounded-[28px] border border-cocoa-400/20 shadow-clay transition-all duration-300;
+  }
+
+  .clay-card-hover {
+    @apply clay-card hover:shadow-clay-hover hover:-translate-y-0.5;
+  }
+
+  .clay-card-peach {
+    @apply bg-gradient-to-br from-peach-50/95 via-peach-100/80 to-linen-100/95 rounded-[28px] border border-peach-300/35 shadow-clay transition-all duration-300;
+  }
+
+  .clay-card-sage {
+    @apply bg-gradient-to-br from-sage-50/95 via-sage-100/80 to-linen-100/95 rounded-[28px] border border-sage-300/35 shadow-clay transition-all duration-300;
+  }
+
+  .clay-card-honey {
+    @apply bg-gradient-to-br from-honey-50/95 via-honey-100/75 to-linen-100/95 rounded-[28px] border border-honey-200/50 shadow-clay transition-all duration-300;
+  }
+
+  .clay-card-oat {
+    @apply bg-linen-200/75 rounded-[24px] border border-cocoa-400/15 shadow-clay-sm;
+  }
+
+  .clay-inset {
+    @apply bg-linen-100/90 rounded-[22px] border border-cocoa-400/15 shadow-clay-inset;
+  }
+
+  .clay-input {
+    @apply bg-linen-50/95 border border-cocoa-400/25 rounded-[20px] text-cocoa-800 placeholder:text-cocoa-400 shadow-clay-inset transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-peach-400/50 focus:border-peach-400/60;
+  }
+
+  .clay-input-sage {
+    @apply bg-linen-50/95 border border-cocoa-400/25 rounded-[20px] text-cocoa-800 placeholder:text-cocoa-400 shadow-clay-inset transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sage-400/50 focus:border-sage-400/60;
+  }
+
+  .clay-btn-peach {
+    @apply bg-gradient-to-b from-peach-400 to-peach-500 hover:from-peach-500 hover:to-peach-600 text-linen-50 rounded-[22px] font-bold shadow-clay-peach border border-peach-300/40 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0;
+  }
+
+  .clay-btn-sage {
+    @apply bg-gradient-to-b from-sage-400 to-sage-500 hover:from-sage-500 hover:to-sage-600 text-linen-50 rounded-[22px] font-bold shadow-clay-sage border border-sage-300/40 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0;
+  }
+
+  .clay-btn-dark {
+    @apply bg-gradient-to-b from-cocoa-700 to-cocoa-800 hover:from-cocoa-800 hover:to-cocoa-900 text-linen-50 rounded-[22px] font-bold shadow-clay-dark border border-cocoa-600/30 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0;
+  }
+
+  .clay-btn-cream {
+    @apply bg-linen-100/95 hover:bg-linen-50 text-cocoa-700 rounded-[22px] font-semibold border border-cocoa-400/20 shadow-clay-sm transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0;
+  }
+
+  .clay-modal {
+    @apply bg-linen-50 rounded-[32px] border border-cocoa-400/20 shadow-clay overflow-hidden;
+  }
+
+  .clay-formula {
+    @apply bg-cocoa-800 text-honey-200 rounded-[20px] px-4 py-3 font-mono text-sm shadow-clay-dark border border-cocoa-700/60;
+  }
+}
+
+/* Soft Warm Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(235, 224, 207, 0.45);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(161, 144, 132, 0.45);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(131, 114, 102, 0.65);
 }
 
 /* Animation mượt cho reveal đáp án */
 .animate-fade-in {
-  animation: fadeIn 0.25s ease-in-out forwards;
+  animation: fadeIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px) scale(0.99);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }

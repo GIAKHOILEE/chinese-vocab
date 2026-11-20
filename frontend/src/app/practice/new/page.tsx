@@ -10,7 +10,7 @@ import {
   Sparkles,
   Loader2,
   AlertCircle,
-  Filter,
+  PenTool,
 } from 'lucide-react';
 
 interface Vocabulary {
@@ -49,7 +49,6 @@ export default function NewPracticePage() {
       try {
         const data = await fetchApi<Vocabulary[]>('/vocabulary');
         setVocabularies(data);
-        // Chọn tất cả theo mặc định để tiện lợi
         setSelectedIds(new Set(data.map((v) => v.id)));
       } catch (err: any) {
         setErrorMsg('Không thể tải từ vựng từ server.');
@@ -116,7 +115,6 @@ export default function NewPracticePage() {
         }),
       });
 
-      // Chuyển hướng tới trang luyện tập /practice/[id]
       router.push(`/practice/${res.id}`);
     } catch (err: any) {
       console.error(err);
@@ -126,32 +124,37 @@ export default function NewPracticePage() {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto py-2">
+    <div className="space-y-6 max-w-5xl mx-auto pb-12">
       {/* Header */}
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-800">Tạo bài tập mới</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Chọn các từ vựng bạn muốn ôn tập và cấu hình các tùy chọn để AI sinh câu.
+      <div className="clay-card p-6 sm:p-7">
+        <h1 className="text-2xl font-extrabold text-cocoa-900 flex items-center gap-2.5">
+          <span className="w-10 h-10 rounded-[16px] bg-peach-100 text-peach-600 border border-peach-200/70 shadow-clay-sm flex items-center justify-center">
+            <PenTool className="w-5 h-5" />
+          </span>
+          <span>Tạo bài tập mới</span>
+        </h1>
+        <p className="text-cocoa-500 text-sm mt-1.5">
+          Chọn các từ vựng bạn muốn ôn tập và cấu hình các tùy chọn để AI sinh câu luyện viết tay.
         </p>
       </div>
 
       {errorMsg && (
-        <div className="p-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-sm flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-600" />
+        <div className="p-4 bg-berry-100/90 border border-berry-200 text-berry-700 rounded-[22px] text-sm font-bold flex items-center gap-2.5 shadow-clay-sm">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 text-berry-500" />
           <span>{errorMsg}</span>
         </div>
       )}
 
       {/* Loading Overlay khi AI đang sinh câu */}
       {generating && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white p-8 rounded-2xl max-w-md w-full shadow-2xl text-center space-y-4 animate-fade-in border border-slate-100">
-            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto">
+        <div className="fixed inset-0 bg-cocoa-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="clay-modal p-8 max-w-md w-full text-center space-y-4 animate-fade-in">
+            <div className="w-16 h-16 bg-peach-100 text-peach-600 rounded-[24px] border border-peach-200/70 shadow-clay-sm flex items-center justify-center mx-auto">
               <Loader2 className="w-8 h-8 animate-spin" />
             </div>
             <div className="space-y-2">
-              <h3 className="text-lg font-bold text-slate-800">Đang tạo bài luyện tập...</h3>
-              <p className="text-sm text-slate-500">
+              <h3 className="text-lg font-extrabold text-cocoa-900">Đang tạo bài luyện tập...</h3>
+              <p className="text-sm text-cocoa-500">
                 AI đang kết hợp vocabulary của bạn thành các câu tự nhiên. Quá trình này có thể mất vài giây.
               </p>
             </div>
@@ -159,13 +162,13 @@ export default function NewPracticePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Cột trái & giữa: Chọn Từ vựng (Vocabulary Selection) */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
-            <div className="flex items-center gap-2">
-              <h2 className="font-semibold text-slate-800">Chọn Từ Vựng</h2>
-              <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-full border border-indigo-100">
+        <div className="lg:col-span-7 clay-card p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-cocoa-400/15 pb-4">
+            <div className="flex items-center gap-2.5">
+              <h2 className="font-extrabold text-cocoa-900">Chọn Từ Vựng</h2>
+              <span className="px-3 py-1 bg-peach-100 text-peach-700 text-xs font-extrabold rounded-full border border-peach-200/70">
                 Đã chọn: {selectedIds.size} / {vocabularies.length}
               </span>
             </div>
@@ -174,14 +177,14 @@ export default function NewPracticePage() {
               <button
                 type="button"
                 onClick={handleSelectAll}
-                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1 bg-indigo-50 rounded"
+                className="text-xs text-peach-700 hover:bg-peach-200/60 font-bold px-3 py-1.5 bg-peach-100/90 rounded-[14px] transition"
               >
                 Select all
               </button>
               <button
                 type="button"
                 onClick={handleDeselectAll}
-                className="text-xs text-slate-500 hover:text-slate-700 font-medium px-2 py-1 bg-slate-100 rounded"
+                className="text-xs text-cocoa-600 hover:bg-linen-300/80 font-bold px-3 py-1.5 bg-linen-200/90 rounded-[14px] transition"
               >
                 Deselect all
               </button>
@@ -189,22 +192,22 @@ export default function NewPracticePage() {
           </div>
 
           {/* Ô lọc và tìm kiếm */}
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2.5">
             <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+              <Search className="w-4 h-4 absolute left-3.5 top-3 text-cocoa-400" />
               <input
                 type="text"
                 placeholder="Tìm từ vựng..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full clay-input pl-10 pr-3.5 py-2 text-sm"
               />
             </div>
             <div className="relative">
               <select
                 value={levelFilter}
                 onChange={(e) => setLevelFilter(e.target.value)}
-                className="px-3 py-1.5 border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full sm:w-auto clay-input px-3.5 py-2 text-sm"
               >
                 <option value="ALL">Tất cả Level</option>
                 <option value="Beginner">Beginner</option>
@@ -216,11 +219,15 @@ export default function NewPracticePage() {
           </div>
 
           {/* Danh sách các thẻ từ vựng Checkbox */}
-          <div className="max-h-96 overflow-y-auto pr-1 space-y-1.5">
+          <div className="max-h-[420px] overflow-y-auto pr-1 space-y-2">
             {loading ? (
-              <p className="text-center py-8 text-sm text-slate-400">Đang tải danh sách từ...</p>
+              <p className="text-center py-10 text-sm text-cocoa-400 font-semibold">
+                Đang tải danh sách từ...
+              </p>
             ) : filteredVocabularies.length === 0 ? (
-              <p className="text-center py-8 text-sm text-slate-400">Không tìm thấy từ vựng nào.</p>
+              <p className="text-center py-10 text-sm text-cocoa-400 font-semibold">
+                Không tìm thấy từ vựng nào.
+              </p>
             ) : (
               filteredVocabularies.map((vocab) => {
                 const isSelected = selectedIds.has(vocab.id);
@@ -228,32 +235,32 @@ export default function NewPracticePage() {
                   <div
                     key={vocab.id}
                     onClick={() => toggleSelect(vocab.id)}
-                    className={`flex items-center justify-between p-3 rounded-lg border transition cursor-pointer select-none ${
+                    className={`flex items-center justify-between p-3.5 rounded-[20px] border transition cursor-pointer select-none ${
                       isSelected
-                        ? 'bg-indigo-50/60 border-indigo-200 text-indigo-900'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                        ? 'bg-peach-50/90 border-peach-300/60 text-cocoa-900 shadow-clay-sm'
+                        : 'bg-linen-100/75 border-cocoa-400/15 text-cocoa-700 hover:bg-linen-50'
                     }`}
                   >
                     <div className="flex items-center gap-3">
                       {isSelected ? (
-                        <CheckSquare className="w-5 h-5 text-indigo-600 flex-shrink-0" />
+                        <CheckSquare className="w-5 h-5 text-peach-600 flex-shrink-0" />
                       ) : (
-                        <Square className="w-5 h-5 text-slate-300 flex-shrink-0" />
+                        <Square className="w-5 h-5 text-cocoa-400/50 flex-shrink-0" />
                       )}
                       <div>
                         <span className="font-chinese font-bold text-base mr-2">{vocab.word}</span>
                         {vocab.partOfSpeech && (
-                          <span className="text-[11px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded mr-2 font-medium">
+                          <span className="text-[11px] px-2 py-0.5 bg-peach-100/80 text-peach-700 rounded-full mr-2 font-bold">
                             {vocab.partOfSpeech}
                           </span>
                         )}
-                        <span className="text-xs text-slate-500 font-sans mr-2">({vocab.pinyin})</span>
-                        <span className="text-sm font-medium text-slate-800">{vocab.meaning}</span>
+                        <span className="text-xs text-cocoa-500 font-semibold mr-2">({vocab.pinyin})</span>
+                        <span className="text-sm font-bold text-cocoa-800">{vocab.meaning}</span>
                       </div>
                     </div>
 
                     {vocab.level && (
-                      <span className="text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded">
+                      <span className="text-xs px-2.5 py-0.5 bg-sage-100/80 text-sage-700 rounded-full font-bold shrink-0">
                         {vocab.level}
                       </span>
                     )}
@@ -265,13 +272,15 @@ export default function NewPracticePage() {
         </div>
 
         {/* Cột phải: Options cài đặt AI */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6 flex flex-col justify-between">
-          <div className="space-y-6">
-            <h2 className="font-semibold text-slate-800 border-b pb-3">Cấu hình bài tập</h2>
+        <div className="lg:col-span-5 clay-card p-6 space-y-6 flex flex-col justify-between">
+          <div className="space-y-5">
+            <h2 className="font-extrabold text-cocoa-900 border-b border-cocoa-400/15 pb-3.5">
+              Cấu hình bài tập
+            </h2>
 
             {/* 1. Số lượng câu */}
             <div className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+              <label className="block text-xs font-extrabold text-cocoa-600 uppercase tracking-wider">
                 Số câu hỏi
               </label>
               <div className="grid grid-cols-4 gap-2">
@@ -280,10 +289,8 @@ export default function NewPracticePage() {
                     key={count}
                     type="button"
                     onClick={() => setQuestionCountOption(count)}
-                    className={`py-2 rounded-lg text-sm font-medium border transition ${
-                      questionCountOption === count
-                        ? 'bg-indigo-600 text-white border-indigo-600'
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                    className={`py-2.5 rounded-[16px] text-sm font-bold transition ${
+                      questionCountOption === count ? 'clay-btn-peach' : 'clay-btn-cream'
                     }`}
                   >
                     {count}
@@ -292,10 +299,8 @@ export default function NewPracticePage() {
                 <button
                   type="button"
                   onClick={() => setQuestionCountOption('custom')}
-                  className={`py-2 rounded-lg text-sm font-medium border transition ${
-                    questionCountOption === 'custom'
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                  className={`py-2.5 rounded-[16px] text-sm font-bold transition ${
+                    questionCountOption === 'custom' ? 'clay-btn-peach' : 'clay-btn-cream'
                   }`}
                 >
                   Custom
@@ -309,7 +314,7 @@ export default function NewPracticePage() {
                   max={50}
                   value={customQuestionCount}
                   onChange={(e) => setCustomQuestionCount(parseInt(e.target.value) || 1)}
-                  className="w-full mt-2 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full mt-2 clay-input px-3.5 py-2.5 text-sm"
                   placeholder="Nhập số câu..."
                 />
               )}
@@ -317,13 +322,13 @@ export default function NewPracticePage() {
 
             {/* 2. Difficulty */}
             <div className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+              <label className="block text-xs font-extrabold text-cocoa-600 uppercase tracking-wider">
                 Difficulty (Độ khó)
               </label>
               <select
                 value={difficulty}
                 onChange={(e) => setDifficulty(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full clay-input px-3.5 py-2.5 text-sm"
               >
                 <option value="Beginner">Beginner</option>
                 <option value="HSK1">HSK1</option>
@@ -334,10 +339,10 @@ export default function NewPracticePage() {
 
             {/* 3. Vocabulary Mode */}
             <div className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+              <label className="block text-xs font-extrabold text-cocoa-600 uppercase tracking-wider">
                 Vocabulary Mode
               </label>
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {[
                   {
                     id: 'STRICT',
@@ -357,31 +362,31 @@ export default function NewPracticePage() {
                 ].map((m) => (
                   <label
                     key={m.id}
-                    className={`block p-3 rounded-lg border cursor-pointer transition ${
+                    className={`block p-3.5 rounded-[20px] border cursor-pointer transition ${
                       mode === m.id
-                        ? 'bg-indigo-50/70 border-indigo-300'
-                        : 'bg-white border-slate-200 hover:bg-slate-50'
+                        ? 'bg-peach-50/90 border-peach-300/60 shadow-clay-sm'
+                        : 'bg-linen-100/75 border-cocoa-400/15 hover:bg-linen-50'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2.5">
                       <input
                         type="radio"
                         name="mode"
                         checked={mode === m.id}
                         onChange={() => setMode(m.id as any)}
-                        className="text-indigo-600 focus:ring-indigo-500"
+                        className="accent-peach-500"
                       />
-                      <span className="font-medium text-xs text-slate-900">{m.title}</span>
+                      <span className="font-extrabold text-xs text-cocoa-900">{m.title}</span>
                     </div>
-                    <p className="text-xs text-slate-500 ml-5 mt-0.5">{m.desc}</p>
+                    <p className="text-xs text-cocoa-500 ml-6 mt-0.5">{m.desc}</p>
                   </label>
                 ))}
               </div>
             </div>
 
             {/* 4. Tùy chọn Tiêu đề & Mô tả ngắn */}
-            <div className="space-y-3 pt-2 border-t border-slate-100">
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider">
+            <div className="space-y-2.5 pt-3 border-t border-cocoa-400/15">
+              <label className="block text-xs font-extrabold text-cocoa-600 uppercase tracking-wider">
                 Tùy chọn Tên & Mô tả bài
               </label>
               <div className="space-y-2">
@@ -390,14 +395,14 @@ export default function NewPracticePage() {
                   placeholder="Tiêu đề bài (để trống AI sẽ tự tạo)"
                   value={customTitle}
                   onChange={(e) => setCustomTitle(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full clay-input px-3.5 py-2.5 text-xs"
                 />
                 <textarea
                   rows={2}
                   placeholder="Mô tả ngắn nội dung bài (tùy chọn)"
                   value={customDescription}
                   onChange={(e) => setCustomDescription(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  className="w-full clay-input px-3.5 py-2.5 text-xs resize-none"
                 />
               </div>
             </div>
@@ -407,7 +412,7 @@ export default function NewPracticePage() {
           <button
             onClick={handleGenerate}
             disabled={generating || selectedIds.size === 0}
-            className="w-full py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-medium shadow-md transition flex items-center justify-center gap-2 text-sm"
+            className="w-full py-4 px-5 clay-btn-peach flex items-center justify-center gap-2 text-sm"
           >
             <Sparkles className="w-4 h-4" />
             <span>Generate Practice ({actualQuestionCount} câu)</span>

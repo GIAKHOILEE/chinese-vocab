@@ -29,7 +29,13 @@ export default function ChineseGamesPage() {
   }, [level]);
 
   if (loading) {
-    return <div className="max-w-4xl mx-auto py-12 text-center text-slate-500">Đang tải từ vựng trò chơi...</div>;
+    return (
+      <div className="max-w-4xl mx-auto py-12">
+        <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
+          Đang tải từ vựng trò chơi...
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -14,9 +14,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="vi">
-      <body className="bg-slate-50 text-slate-900 flex flex-col min-h-screen">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Nunito:wght@400;500;600;700;800&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="text-cocoa-800 flex flex-col min-h-screen selection:bg-peach-200/70 selection:text-cocoa-900">
         <Navigation />
-        <main className="flex-1 max-w-5xl w-full mx-auto p-4 sm:p-6 md:p-8">
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 md:px-8 py-6 sm:py-8">
           {children}
         </main>
       </body>

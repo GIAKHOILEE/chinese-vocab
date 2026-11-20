@@ -59,8 +59,8 @@ export default function PracticeSessionPage() {
 
   // Trạng thái phát âm Web Speech API
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [speechRate, setSpeechRate] = useState(0.85); // 0.75x chậm, 1.0x chuẩn
-  const [autoPlay, setAutoPlay] = useState(true); // Tự động phát khi mở đáp án
+  const [speechRate, setSpeechRate] = useState(0.85);
+  const [autoPlay, setAutoPlay] = useState(true);
 
   // Trạng thái modal sửa tiêu đề/mô tả bài tập
   const [isEditing, setIsEditing] = useState(false);
@@ -89,7 +89,6 @@ export default function PracticeSessionPage() {
     }, 3200);
   };
 
-  // Khôi phục cài đặt phát âm từ localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedAutoPlay = localStorage.getItem('chinese_tts_autoplay');
@@ -120,7 +119,6 @@ export default function PracticeSessionPage() {
     });
   };
 
-  // Hàm phát âm tiếng Trung
   const handleSpeak = useCallback(
     (text?: string) => {
       if (!text) return;
@@ -134,14 +132,12 @@ export default function PracticeSessionPage() {
     [speechRate],
   );
 
-  // Dừng phát âm khi rời trang hoặc kết thúc
   useEffect(() => {
     return () => {
       stopSpeaking();
     };
   }, []);
 
-  // Tải dữ liệu bài tập từ Backend
   useEffect(() => {
     async function loadPracticeSet() {
       try {
@@ -158,7 +154,6 @@ export default function PracticeSessionPage() {
     }
   }, [practiceId]);
 
-  // Hành động Chuyển sang câu tiếp theo
   const handleNextQuestion = useCallback(() => {
     stopSpeaking();
     setIsSpeaking(false);
@@ -171,7 +166,6 @@ export default function PracticeSessionPage() {
     }
   }, [currentIndex, practiceSet]);
 
-  // Hành động Hiện đáp án (và tự động phát âm nếu bật)
   const handleRevealAnswer = useCallback(() => {
     setShowAnswer(true);
     const chineseSentence = practiceSet?.questions[currentIndex]?.chinese;
@@ -180,7 +174,6 @@ export default function PracticeSessionPage() {
     }
   }, [autoPlay, practiceSet, currentIndex, handleSpeak]);
 
-  // Luyện tập lại từ câu đầu tiên
   const handleRestart = () => {
     stopSpeaking();
     setIsSpeaking(false);
@@ -189,7 +182,6 @@ export default function PracticeSessionPage() {
     setIsCompleted(false);
   };
 
-  // Mở modal sửa bài tập
   const handleOpenEdit = () => {
     if (!practiceSet) return;
     setEditTitle(practiceSet.title);
@@ -198,7 +190,6 @@ export default function PracticeSessionPage() {
     setIsEditing(true);
   };
 
-  // Lưu chỉnh sửa tiêu đề và mô tả
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!practiceSet) return;
@@ -239,11 +230,6 @@ export default function PracticeSessionPage() {
     }
   };
 
-  // ==========================================
-  // XỬ LÝ CÂU HỎI (THÊM / SỬA / XÓA / AUTO GEN)
-  // ==========================================
-
-  // Mở modal Thêm câu mới
   const handleOpenAddQuestion = () => {
     setQuestionModalMode('create');
     setEditingQuestion(null);
@@ -253,7 +239,6 @@ export default function PracticeSessionPage() {
     setQuestionFormError('');
   };
 
-  // Mở modal Sửa câu
   const handleOpenEditQuestion = (q: Question) => {
     setQuestionModalMode('edit');
     setEditingQuestion(q);
@@ -273,7 +258,6 @@ export default function PracticeSessionPage() {
     setIsAutoGenerating(false);
   };
 
-  // Tự động sinh Pinyin & dịch Tiếng Việt bằng AI
   const handleAutoGenerateInfo = async () => {
     if (!questionChinese.trim()) {
       setQuestionFormError('Vui lòng nhập câu tiếng Trung trước khi tự động sinh.');
@@ -309,7 +293,6 @@ export default function PracticeSessionPage() {
     }
   };
 
-  // Lưu câu hỏi (Thêm mới hoặc Cập nhật)
   const handleSaveQuestion = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!practiceSet) return;
@@ -377,7 +360,6 @@ export default function PracticeSessionPage() {
     }
   };
 
-  // Xóa câu hỏi khỏi bài tập
   const handleDeleteQuestion = async (questionId: string) => {
     if (!confirm('Bạn có chắc muốn xóa câu này khỏi bài tập?')) return;
 
@@ -396,7 +378,6 @@ export default function PracticeSessionPage() {
         };
       });
 
-      // Điều chỉnh currentIndex nếu câu hiện tại bị xóa hoặc vị trí vượt giới hạn
       setCurrentIndex((prev) => {
         const newTotal = (practiceSet?.questions.length || 1) - 1;
         if (newTotal <= 0) return 0;
@@ -409,7 +390,6 @@ export default function PracticeSessionPage() {
     }
   };
 
-  // Chuyển tới một câu cụ thể để luyện tập
   const handleJumpToQuestion = (index: number) => {
     stopSpeaking();
     setIsSpeaking(false);
@@ -419,12 +399,10 @@ export default function PracticeSessionPage() {
     setIsQuestionsListOpen(false);
   };
 
-  // Xử lý Phím tắt Keyboard (Space: Xem đáp án/Chuyển câu, ArrowRight: Câu tiếp theo, A: Phát âm)
   const isAnyModalOpen = isEditing || isQuestionsListOpen || questionModalMode !== null;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Tránh bắt phím khi người dùng đang nhập input hoặc có modal đang mở
       if (isAnyModalOpen || ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement)?.tagName)) {
         return;
       }
@@ -457,21 +435,21 @@ export default function PracticeSessionPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-slate-500 text-sm flex items-center gap-2">
-          <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+        <div className="clay-card px-8 py-6 text-cocoa-600 text-sm font-bold flex items-center gap-2.5">
+          <Loader2 className="w-5 h-5 animate-spin text-peach-500" />
           <span>Đang tải bài tập...</span>
-        </p>
+        </div>
       </div>
     );
   }
 
   if (errorMsg || !practiceSet) {
     return (
-      <div className="max-w-md mx-auto my-12 p-6 bg-white rounded-xl border text-center space-y-4">
-        <p className="text-rose-600 text-sm">{errorMsg || 'Bài tập không tồn tại'}</p>
+      <div className="max-w-md mx-auto my-12 clay-card p-8 text-center space-y-4">
+        <p className="text-berry-700 text-sm font-bold">{errorMsg || 'Bài tập không tồn tại'}</p>
         <button
           onClick={() => router.push('/practice')}
-          className="px-4 py-2 bg-slate-100 text-slate-700 text-sm rounded-lg hover:bg-slate-200"
+          className="clay-btn-cream px-5 py-2.5 text-sm"
         >
           Quay lại Lịch sử
         </button>
@@ -483,10 +461,10 @@ export default function PracticeSessionPage() {
   const totalQuestions = practiceSet.questions.length;
 
   return (
-    <div className="max-w-3xl mx-auto py-6 space-y-6">
+    <div className="max-w-3xl mx-auto py-2 space-y-6 pb-12">
       {/* Toast thông báo nổi */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-medium animate-fade-in">
+        <div className="fixed bottom-6 right-6 z-50 bg-gradient-to-b from-sage-400 to-sage-500 text-linen-50 px-5 py-3 rounded-[22px] shadow-clay-sage border border-sage-300/40 flex items-center gap-2 text-sm font-bold animate-fade-in">
           <Check className="w-4 h-4" />
           <span>{toastMessage}</span>
         </div>
@@ -496,33 +474,31 @@ export default function PracticeSessionPage() {
       <div className="flex items-center justify-between">
         <button
           onClick={() => router.push('/practice')}
-          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-800 transition"
+          className="clay-btn-cream inline-flex items-center gap-1.5 px-3.5 py-2 text-xs"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Danh sách bài tập</span>
         </button>
 
-        <span className="text-xs font-semibold px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-100">
+        <span className="text-xs font-extrabold px-3.5 py-1.5 bg-peach-100 text-peach-700 rounded-full border border-peach-200/70 shadow-clay-sm">
           {practiceSet.difficulty}
         </span>
       </div>
 
       {/* Thông tin Tiêu đề & Quản lý bài tập */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+      <div className="clay-card p-6 space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-          <div className="space-y-1">
-            <h1 className="text-lg sm:text-xl font-bold text-slate-800">
-              {practiceSet.title}
-            </h1>
+          <div className="space-y-1.5">
+            <h1 className="text-lg sm:text-xl font-extrabold text-cocoa-900">{practiceSet.title}</h1>
             {practiceSet.description ? (
-              <p className="text-xs text-slate-500 flex items-start gap-1.5 leading-relaxed">
-                <FileText className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-cocoa-500 flex items-start gap-1.5 leading-relaxed">
+                <FileText className="w-3.5 h-3.5 text-peach-500 flex-shrink-0 mt-0.5" />
                 <span>{practiceSet.description}</span>
               </p>
             ) : (
               <button
                 onClick={handleOpenEdit}
-                className="text-xs text-slate-400 italic hover:text-indigo-600 transition"
+                className="text-xs text-cocoa-400 italic hover:text-peach-600 transition font-semibold"
               >
                 + Thêm mô tả ngắn để ghi nhớ nội dung bài này...
               </button>
@@ -533,16 +509,16 @@ export default function PracticeSessionPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setIsQuestionsListOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded-xl transition"
+              className="clay-btn-cream inline-flex items-center gap-1.5 px-3.5 py-2 text-xs"
               title="Xem và quản lý tất cả các câu trong bài tập này"
             >
-              <Layers className="w-3.5 h-3.5 text-indigo-600" />
+              <Layers className="w-3.5 h-3.5 text-peach-600" />
               <span>Danh sách câu ({totalQuestions})</span>
             </button>
 
             <button
               onClick={handleOpenAddQuestion}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-xl transition shadow-xs"
+              className="clay-btn-peach inline-flex items-center gap-1.5 px-3.5 py-2 text-xs"
               title="Thêm một câu tiếng Trung mới vào bài tập"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -552,7 +528,7 @@ export default function PracticeSessionPage() {
             <button
               onClick={handleOpenEdit}
               title="Chỉnh sửa tiêu đề & mô tả bài tập"
-              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+              className="p-2 text-cocoa-400 hover:text-peach-600 hover:bg-peach-100/70 rounded-full transition"
             >
               <Pencil className="w-4 h-4" />
             </button>
@@ -562,19 +538,19 @@ export default function PracticeSessionPage() {
 
       {/* Trường hợp bài tập chưa có câu hỏi nào */}
       {totalQuestions === 0 ? (
-        <div className="bg-white p-10 rounded-2xl border border-dashed border-slate-300 text-center space-y-4">
-          <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto">
-            <FileText className="w-6 h-6" />
+        <div className="clay-card p-10 border-dashed text-center space-y-4">
+          <div className="w-14 h-14 rounded-[22px] bg-peach-100 text-peach-600 border border-peach-200/70 shadow-clay-sm flex items-center justify-center mx-auto">
+            <FileText className="w-7 h-7" />
           </div>
           <div className="space-y-1">
-            <h3 className="font-bold text-slate-800 text-base">Bài tập này chưa có câu nào</h3>
-            <p className="text-slate-500 text-xs">
+            <h3 className="font-extrabold text-cocoa-900 text-base">Bài tập này chưa có câu nào</h3>
+            <p className="text-cocoa-500 text-xs">
               Bạn có thể thêm câu tiếng Trung mới để luyện viết ngay bây giờ.
             </p>
           </div>
           <button
             onClick={handleOpenAddQuestion}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition shadow-sm"
+            className="clay-btn-peach inline-flex items-center gap-2 px-5 py-3 text-sm"
           >
             <Plus className="w-4 h-4" />
             <span>Thêm câu đầu tiên</span>
@@ -582,14 +558,14 @@ export default function PracticeSessionPage() {
         </div>
       ) : isCompleted ? (
         /* Màn hình hoàn thành bài tập */
-        <div className="bg-white p-8 sm:p-12 rounded-2xl border border-slate-200 shadow-md text-center space-y-6 animate-fade-in">
-          <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
+        <div className="clay-card-sage p-8 sm:p-12 text-center space-y-6 animate-fade-in">
+          <div className="w-16 h-16 bg-linen-50 text-sage-600 rounded-[24px] border border-sage-200/80 shadow-clay-sm flex items-center justify-center mx-auto">
             <CheckCircle2 className="w-10 h-10" />
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-slate-800">Hoàn thành bài tập!</h2>
-            <p className="text-slate-500 text-sm">
+            <h2 className="text-2xl font-extrabold text-cocoa-900">Hoàn thành bài tập!</h2>
+            <p className="text-cocoa-600 text-sm">
               Bạn đã hoàn thành viết tay toàn bộ {totalQuestions} câu tiếng Trung.
             </p>
           </div>
@@ -597,21 +573,21 @@ export default function PracticeSessionPage() {
           <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
             <button
               onClick={handleRestart}
-              className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition"
+              className="clay-btn-cream flex items-center gap-2 px-5 py-3 text-sm"
             >
               <RotateCcw className="w-4 h-4" />
               <span>Luyện lại bộ câu này</span>
             </button>
             <button
               onClick={() => setIsQuestionsListOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-sm font-medium transition"
+              className="clay-btn-cream flex items-center gap-2 px-5 py-3 text-sm text-peach-700"
             >
               <Layers className="w-4 h-4" />
               <span>Xem danh sách câu</span>
             </button>
             <button
               onClick={() => router.push('/practice/new')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium transition shadow-sm"
+              className="clay-btn-peach flex items-center gap-2 px-5 py-3 text-sm"
             >
               <span>Tạo bài mới</span>
             </button>
@@ -619,16 +595,18 @@ export default function PracticeSessionPage() {
         </div>
       ) : (
         /* Thẻ hiển thị câu hỏi luyện viết chính */
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-10 space-y-8 min-h-[380px] flex flex-col justify-between transition-all">
+        <div className="clay-card p-6 sm:p-10 space-y-8 min-h-[400px] flex flex-col justify-between transition-all">
           {/* Tiến trình: Câu X / Y + Nút sửa câu hiện tại */}
-          <div className="flex flex-wrap items-center justify-between gap-2 text-slate-400 text-sm font-medium">
-            <div className="flex items-center gap-2">
-              <span className="font-semibold text-slate-700">Câu {currentIndex + 1} / {totalQuestions}</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-cocoa-400 text-sm font-bold">
+            <div className="flex items-center gap-2.5">
+              <span className="px-3.5 py-1 rounded-full bg-linen-200/85 text-cocoa-800 text-xs font-extrabold">
+                Câu {currentIndex + 1} / {totalQuestions}
+              </span>
               {currentQuestion && (
                 <button
                   type="button"
                   onClick={() => handleOpenEditQuestion(currentQuestion)}
-                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 transition"
+                  className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-linen-100 hover:bg-peach-100 text-cocoa-600 hover:text-peach-700 border border-cocoa-400/15 transition"
                   title="Chỉnh sửa câu này (chữ Hán, Pinyin, nghĩa)"
                 >
                   <Pencil className="w-3 h-3" />
@@ -637,55 +615,58 @@ export default function PracticeSessionPage() {
               )}
             </div>
 
-            <span className="text-xs hidden sm:inline text-slate-400">
-              [Phím tắt: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600">Space</code> = Xem/Tiếp, <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600">➔</code> = Tiếp, <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-600">A</code> = Phát âm]
+            <span className="text-xs hidden sm:inline text-cocoa-400 font-semibold">
+              [Phím tắt: <code className="bg-linen-200 px-1.5 py-0.5 rounded-md text-cocoa-700">Space</code> = Xem/Tiếp,{' '}
+              <code className="bg-linen-200 px-1.5 py-0.5 rounded-md text-cocoa-700">➔</code> = Tiếp,{' '}
+              <code className="bg-linen-200 px-1.5 py-0.5 rounded-md text-cocoa-700">A</code> = Phát âm]
             </span>
           </div>
 
           {/* Nội dung câu Tiếng Việt */}
-          <div className="text-center py-4 space-y-4">
-            <p className="text-xl sm:text-2xl font-semibold text-slate-800 leading-relaxed px-4">
+          <div className="clay-inset text-center py-7 px-5 space-y-3">
+            <p className="text-xl sm:text-2xl font-extrabold text-cocoa-900 leading-relaxed">
               {currentQuestion?.vietnamese}
             </p>
-            <p className="text-xs text-slate-400">Tự viết câu tiếng Trung ra giấy trước khi xem đáp án</p>
+            <p className="text-xs text-cocoa-500 font-semibold">
+              Tự viết câu tiếng Trung ra giấy trước khi xem đáp án
+            </p>
           </div>
 
-          {/* Khối ĐÁP ÁN tiếng Trung và Pinyin (Chỉ xuất hiện sau khi Click hoặc bấm Space) */}
+          {/* Khối ĐÁP ÁN tiếng Trung và Pinyin */}
           {showAnswer ? (
-            <div className="space-y-4 border-t border-slate-100 pt-6 text-center animate-fade-in">
+            <div className="space-y-4 border-t border-cocoa-400/15 pt-6 text-center animate-fade-in">
               <div className="flex items-center justify-center gap-3">
-                <div className="font-chinese font-bold text-3xl sm:text-4xl text-slate-900 tracking-wide">
+                <div className="font-chinese font-bold text-3xl sm:text-4xl text-cocoa-900 tracking-wide">
                   {currentQuestion?.chinese}
                 </div>
                 <button
                   type="button"
                   onClick={() => handleSpeak(currentQuestion?.chinese)}
                   title="Nghe phát âm (Phím A)"
-                  className={`p-2.5 rounded-full transition shadow-sm ${
+                  className={`p-3 rounded-full transition ${
                     isSpeaking
-                      ? 'bg-indigo-600 text-white ring-4 ring-indigo-200 animate-pulse'
-                      : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:scale-105 active:scale-95'
+                      ? 'bg-peach-500 text-linen-50 ring-4 ring-peach-200 animate-pulse shadow-clay-peach'
+                      : 'bg-peach-100 text-peach-600 hover:bg-peach-200/80 shadow-clay-sm hover:scale-105 active:scale-95'
                   }`}
                 >
                   <Volume2 className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="font-sans text-slate-600 text-base sm:text-lg font-medium">
+              <div className="font-sans text-peach-700 text-base sm:text-lg font-bold">
                 {currentQuestion?.pinyin}
               </div>
 
               {/* Bảng điều khiển tốc độ & tự động đọc */}
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2 text-xs">
-                {/* Tốc độ đọc */}
-                <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                <div className="inline-flex items-center bg-linen-200/80 p-1 rounded-[16px] border border-cocoa-400/15 shadow-clay-inset">
                   <button
                     type="button"
                     onClick={() => changeSpeechRate(0.75)}
-                    className={`px-2.5 py-1 rounded-md font-medium transition ${
+                    className={`px-3 py-1.5 rounded-[12px] font-bold transition ${
                       speechRate === 0.75
-                        ? 'bg-white text-indigo-700 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800'
+                        ? 'bg-linen-50 text-peach-700 shadow-clay-sm'
+                        : 'text-cocoa-500 hover:text-cocoa-800'
                     }`}
                   >
                     0.75x (Chậm)
@@ -693,34 +674,33 @@ export default function PracticeSessionPage() {
                   <button
                     type="button"
                     onClick={() => changeSpeechRate(1.0)}
-                    className={`px-2.5 py-1 rounded-md font-medium transition ${
+                    className={`px-3 py-1.5 rounded-[12px] font-bold transition ${
                       speechRate === 1.0
-                        ? 'bg-white text-indigo-700 shadow-xs'
-                        : 'text-slate-500 hover:text-slate-800'
+                        ? 'bg-linen-50 text-peach-700 shadow-clay-sm'
+                        : 'text-cocoa-500 hover:text-cocoa-800'
                     }`}
                   >
                     1.0x (Chuẩn)
                   </button>
                 </div>
 
-                {/* Tùy chọn Tự động phát âm */}
                 <button
                   type="button"
                   onClick={toggleAutoPlay}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border transition ${
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-[16px] border transition font-bold ${
                     autoPlay
-                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-medium'
-                      : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'
+                      ? 'bg-peach-100/90 border-peach-300/60 text-peach-700 shadow-clay-sm'
+                      : 'bg-linen-100 border-cocoa-400/20 text-cocoa-400 hover:text-cocoa-600'
                   }`}
                   title="Tự động phát giọng đọc mỗi khi bấm mở đáp án"
                 >
-                  <Volume2 className={`w-3.5 h-3.5 ${autoPlay ? 'text-indigo-600' : 'text-slate-400'}`} />
+                  <Volume2 className={`w-3.5 h-3.5 ${autoPlay ? 'text-peach-600' : 'text-cocoa-400'}`} />
                   <span>Tự động đọc: {autoPlay ? 'Bật' : 'Tắt'}</span>
                 </button>
               </div>
             </div>
           ) : (
-            <div className="h-20" /> // Giữ khung height cố định không bị nhảy layout
+            <div className="h-16" />
           )}
 
           {/* Nút thao tác Xem đáp án / Câu tiếp theo */}
@@ -728,7 +708,7 @@ export default function PracticeSessionPage() {
             {!showAnswer ? (
               <button
                 onClick={handleRevealAnswer}
-                className="w-full sm:w-auto px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium shadow-md transition flex items-center justify-center gap-2 text-base"
+                className="w-full sm:w-auto px-9 py-4 clay-btn-peach flex items-center justify-center gap-2 text-base"
               >
                 <Eye className="w-5 h-5" />
                 <span>Xem đáp án</span>
@@ -736,7 +716,7 @@ export default function PracticeSessionPage() {
             ) : (
               <button
                 onClick={handleNextQuestion}
-                className="w-full sm:w-auto px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium shadow-md transition flex items-center justify-center gap-2 text-base animate-fade-in"
+                className="w-full sm:w-auto px-9 py-4 clay-btn-sage flex items-center justify-center gap-2 text-base animate-fade-in"
               >
                 <span>{currentIndex < totalQuestions - 1 ? 'Câu tiếp theo' : 'Hoàn thành bài tập'}</span>
                 <ArrowRight className="w-5 h-5" />
@@ -746,23 +726,22 @@ export default function PracticeSessionPage() {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL 1: QUẢN LÝ DANH SÁCH CÂU HỎI TRONG BÀI TẬP          */}
-      {/* ========================================================= */}
+      {/* MODAL 1: QUẢN LÝ DANH SÁCH CÂU HỎI TRONG BÀI TẬP */}
       {isQuestionsListOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden">
-            {/* Header modal danh sách */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70 flex-shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+        <div className="fixed inset-0 bg-cocoa-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="clay-modal max-w-2xl w-full max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-cocoa-400/15 bg-linen-100/80 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-[16px] bg-peach-100 text-peach-600 border border-peach-200/60 shadow-clay-sm flex items-center justify-center">
                   <Layers className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-800 text-base">
+                  <h3 className="font-extrabold text-cocoa-900 text-base">
                     Các câu trong bài tập ({practiceSet.questions.length})
                   </h3>
-                  <p className="text-xs text-slate-500">Xem, chỉnh sửa hoặc thêm câu mới vào bài luyện tập</p>
+                  <p className="text-xs text-cocoa-500">
+                    Xem, chỉnh sửa hoặc thêm câu mới vào bài luyện tập
+                  </p>
                 </div>
               </div>
 
@@ -772,7 +751,7 @@ export default function PracticeSessionPage() {
                   onClick={() => {
                     handleOpenAddQuestion();
                   }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-medium transition shadow-xs"
+                  className="clay-btn-peach flex items-center gap-1.5 px-3.5 py-2 text-xs"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Thêm câu mới</span>
@@ -781,17 +760,16 @@ export default function PracticeSessionPage() {
                 <button
                   type="button"
                   onClick={() => setIsQuestionsListOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                  className="text-cocoa-400 hover:text-cocoa-700 p-2 hover:bg-linen-200/80 rounded-full transition"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            {/* Danh sách câu hỏi cuộn được */}
-            <div className="p-6 overflow-y-auto space-y-3 flex-1 divide-y divide-slate-100">
+            <div className="p-6 overflow-y-auto space-y-3 flex-1 divide-y divide-cocoa-400/15">
               {practiceSet.questions.length === 0 ? (
-                <div className="text-center py-10 text-slate-400 text-xs">
+                <div className="text-center py-10 text-cocoa-400 text-xs font-semibold">
                   Chưa có câu nào. Nhấn &quot;Thêm câu mới&quot; để bổ sung câu hỏi.
                 </div>
               ) : (
@@ -799,46 +777,43 @@ export default function PracticeSessionPage() {
                   <div
                     key={q.id}
                     className={`pt-3 first:pt-0 pb-3 flex items-start justify-between gap-3 group transition ${
-                      idx === currentIndex ? 'bg-indigo-50/40 p-3 rounded-xl border border-indigo-100' : ''
+                      idx === currentIndex
+                        ? 'bg-peach-50/80 p-3.5 rounded-[20px] border border-peach-200/70'
+                        : ''
                     }`}
                   >
                     <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center mt-0.5">
+                      <span className="flex-shrink-0 w-7 h-7 rounded-full bg-linen-200 text-cocoa-700 text-xs font-extrabold flex items-center justify-center mt-0.5">
                         {idx + 1}
                       </span>
 
                       <div className="space-y-1 min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <p className="font-chinese text-lg font-bold text-slate-900 tracking-wide break-words">
+                          <p className="font-chinese text-lg font-bold text-cocoa-900 tracking-wide break-words">
                             {q.chinese}
                           </p>
                           <button
                             type="button"
                             onClick={() => handleSpeak(q.chinese)}
-                            className="p-1 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 rounded transition flex-shrink-0"
+                            className="p-1.5 text-peach-600 hover:bg-peach-100 rounded-full transition flex-shrink-0"
                             title="Nghe phát âm"
                           >
                             <Volume2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
-                        <p className="text-xs text-indigo-600 font-medium break-words">
-                          {q.pinyin}
-                        </p>
-                        <p className="text-xs text-slate-600 break-words">
-                          {q.vietnamese}
-                        </p>
+                        <p className="text-xs text-peach-600 font-bold break-words">{q.pinyin}</p>
+                        <p className="text-xs text-cocoa-600 break-words">{q.vietnamese}</p>
                       </div>
                     </div>
 
-                    {/* Nút hành động cho câu này */}
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <button
                         type="button"
                         onClick={() => handleJumpToQuestion(idx)}
                         title="Luyện ngay câu này"
-                        className="px-2 py-1 text-xs text-slate-600 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition flex items-center gap-1"
+                        className="px-2.5 py-1.5 text-xs text-cocoa-700 hover:text-sage-700 hover:bg-sage-100/80 rounded-[14px] font-bold transition flex items-center gap-1"
                       >
-                        <Play className="w-3 h-3 text-emerald-600" />
+                        <Play className="w-3 h-3 text-sage-600" />
                         <span className="hidden sm:inline">Luyện</span>
                       </button>
 
@@ -846,7 +821,7 @@ export default function PracticeSessionPage() {
                         type="button"
                         onClick={() => handleOpenEditQuestion(q)}
                         title="Chỉnh sửa câu này"
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                        className="p-2 text-cocoa-400 hover:text-peach-600 hover:bg-peach-100/70 rounded-full transition"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -855,7 +830,7 @@ export default function PracticeSessionPage() {
                         type="button"
                         onClick={() => handleDeleteQuestion(q.id)}
                         title="Xóa câu này"
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                        className="p-2 text-cocoa-400 hover:text-berry-700 hover:bg-berry-100/80 rounded-full transition"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -865,13 +840,12 @@ export default function PracticeSessionPage() {
               )}
             </div>
 
-            {/* Footer modal danh sách */}
-            <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between flex-shrink-0 text-xs text-slate-500">
+            <div className="px-6 py-4 border-t border-cocoa-400/15 bg-linen-100/80 flex items-center justify-between flex-shrink-0 text-xs text-cocoa-500 font-bold">
               <span>Tổng cộng {practiceSet.questions.length} câu</span>
               <button
                 type="button"
                 onClick={() => setIsQuestionsListOpen(false)}
-                className="px-4 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-lg font-medium transition"
+                className="clay-btn-cream px-4 py-2 text-xs"
               >
                 Đóng
               </button>
@@ -880,23 +854,24 @@ export default function PracticeSessionPage() {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL 2: THÊM CÂU MỚI HOẶC CHỈNH SỬA CÂU HỎI             */}
-      {/* ========================================================= */}
+      {/* MODAL 2: THÊM CÂU MỚI HOẶC CHỈNH SỬA CÂU HỎI */}
       {questionModalMode !== null && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
-                  {questionModalMode === 'create' ? <Plus className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+        <div className="fixed inset-0 bg-cocoa-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="clay-modal max-w-lg w-full">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-cocoa-400/15 bg-linen-100/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-[16px] bg-peach-100 text-peach-600 border border-peach-200/60 shadow-clay-sm flex items-center justify-center">
+                  {questionModalMode === 'create' ? (
+                    <Plus className="w-4 h-4" />
+                  ) : (
+                    <Pencil className="w-4 h-4" />
+                  )}
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-800 text-base">
+                  <h3 className="font-extrabold text-cocoa-900 text-base">
                     {questionModalMode === 'create' ? 'Thêm câu tiếng Trung mới' : 'Chỉnh sửa câu hỏi'}
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-cocoa-500">
                     Nhập câu chữ Hán, hệ thống sẽ tự động tạo Pinyin và dịch nghĩa
                   </p>
                 </div>
@@ -905,34 +880,31 @@ export default function PracticeSessionPage() {
                 type="button"
                 onClick={handleCloseQuestionModal}
                 disabled={savingQuestion || isAutoGenerating}
-                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                className="text-cocoa-400 hover:text-cocoa-700 p-2 hover:bg-linen-200/80 rounded-full transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Form */}
             <form onSubmit={handleSaveQuestion} className="p-6 space-y-4">
               {questionFormError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-rose-500" />
+                <div className="p-3.5 bg-berry-100 border border-berry-200 text-berry-700 rounded-[18px] text-xs font-bold flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-berry-500" />
                   <span>{questionFormError}</span>
                 </div>
               )}
 
-              {/* Ô nhập câu tiếng Trung */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                    Câu tiếng Trung (Chữ Hán) <span className="text-rose-500">*</span>
+                  <label className="block text-xs font-extrabold text-cocoa-700 uppercase tracking-wider">
+                    Câu tiếng Trung (Chữ Hán) <span className="text-berry-500">*</span>
                   </label>
 
-                  {/* Nút tự động sinh AI */}
                   <button
                     type="button"
                     onClick={handleAutoGenerateInfo}
                     disabled={isAutoGenerating || !questionChinese.trim()}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 text-white shadow-xs transition"
+                    className="clay-btn-sage inline-flex items-center gap-1.5 px-3 py-1.5 text-xs"
                     title="Tự động tạo Pinyin và dịch sang Tiếng Việt bằng AI"
                   >
                     {isAutoGenerating ? (
@@ -942,7 +914,7 @@ export default function PracticeSessionPage() {
                       </>
                     ) : (
                       <>
-                        <Sparkles className="w-3 h-3 text-amber-200" />
+                        <Sparkles className="w-3 h-3 text-honey-100" />
                         <span>Tự gen Pinyin & Dịch</span>
                       </>
                     )}
@@ -956,13 +928,12 @@ export default function PracticeSessionPage() {
                   placeholder="Ví dụ: 我每天都努力学习中文。"
                   required
                   autoFocus
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-base font-chinese focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
+                  className="w-full clay-input px-4 py-2.5 text-base font-chinese resize-none"
                 />
               </div>
 
-              {/* Ô Pinyin */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <label className="block text-xs font-extrabold text-cocoa-700 uppercase tracking-wider">
                   Phiên âm Pinyin
                 </label>
                 <input
@@ -970,17 +941,16 @@ export default function PracticeSessionPage() {
                   value={questionPinyin}
                   onChange={(e) => setQuestionPinyin(e.target.value)}
                   placeholder="Ví dụ: wǒ měi tiān dōu nǔ lì xué xí zhōng wén 。"
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                  className="w-full clay-input px-4 py-2.5 text-sm"
                 />
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-cocoa-400">
                   Tự động sinh từ chữ Hán hoặc bạn có thể chỉnh tay thanh điệu theo ý muốn.
                 </p>
               </div>
 
-              {/* Ô câu tiếng Việt */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Nghĩa / Câu tiếng Việt <span className="text-rose-500">*</span>
+                <label className="block text-xs font-extrabold text-cocoa-700 uppercase tracking-wider">
+                  Nghĩa / Câu tiếng Việt <span className="text-berry-500">*</span>
                 </label>
                 <textarea
                   rows={2}
@@ -988,30 +958,32 @@ export default function PracticeSessionPage() {
                   onChange={(e) => setQuestionVietnamese(e.target.value)}
                   placeholder="Ví dụ: Mỗi ngày tôi đều chăm chỉ học tiếng Trung."
                   required
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
+                  className="w-full clay-input px-4 py-2.5 text-sm resize-none"
                 />
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-cocoa-400">
                   Câu hỏi tiếng Việt hiển thị để người học tự luyện viết tay ra giấy.
                 </p>
               </div>
 
-              {/* Xem trước nhanh câu hỏi */}
               {questionChinese && (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1 text-xs">
-                  <span className="text-slate-400 font-semibold uppercase text-[10px] tracking-wider">Xem trước thẻ:</span>
-                  <p className="text-slate-800 font-medium">{questionVietnamese || '(Chưa có câu tiếng Việt)'}</p>
-                  <p className="font-chinese text-base font-bold text-indigo-700">{questionChinese}</p>
-                  {questionPinyin && <p className="text-slate-500">{questionPinyin}</p>}
+                <div className="clay-inset p-3.5 space-y-1 text-xs">
+                  <span className="text-cocoa-400 font-extrabold uppercase text-[10px] tracking-wider">
+                    Xem trước thẻ:
+                  </span>
+                  <p className="text-cocoa-800 font-bold">
+                    {questionVietnamese || '(Chưa có câu tiếng Việt)'}
+                  </p>
+                  <p className="font-chinese text-base font-bold text-peach-700">{questionChinese}</p>
+                  {questionPinyin && <p className="text-cocoa-500">{questionPinyin}</p>}
                 </div>
               )}
 
-              {/* Nút hành động */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-cocoa-400/15">
                 <button
                   type="button"
                   onClick={handleCloseQuestionModal}
                   disabled={savingQuestion || isAutoGenerating}
-                  className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-sm font-medium transition"
+                  className="clay-btn-cream px-5 py-2.5 text-sm"
                 >
                   Hủy
                 </button>
@@ -1019,7 +991,7 @@ export default function PracticeSessionPage() {
                 <button
                   type="submit"
                   disabled={savingQuestion || isAutoGenerating}
-                  className="flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition shadow-sm"
+                  className="clay-btn-peach flex items-center gap-1.5 px-5 py-2.5 text-sm"
                 >
                   {savingQuestion ? (
                     <>
@@ -1029,7 +1001,9 @@ export default function PracticeSessionPage() {
                   ) : (
                     <>
                       <Check className="w-4 h-4" />
-                      <span>{questionModalMode === 'create' ? 'Thêm vào bài tập' : 'Lưu thay đổi'}</span>
+                      <span>
+                        {questionModalMode === 'create' ? 'Thêm vào bài tập' : 'Lưu thay đổi'}
+                      </span>
                     </>
                   )}
                 </button>
@@ -1039,27 +1013,25 @@ export default function PracticeSessionPage() {
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* MODAL 3: CHỈNH SỬA TIÊU ĐỀ & MÔ TẢ BÀI TẬP                */}
-      {/* ========================================================= */}
+      {/* MODAL 3: CHỈNH SỬA TIÊU ĐỀ & MÔ TẢ BÀI TẬP */}
       {isEditing && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-100 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/60">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+        <div className="fixed inset-0 bg-cocoa-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="clay-modal max-w-lg w-full">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-cocoa-400/15 bg-linen-100/80">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-[16px] bg-peach-100 text-peach-600 border border-peach-200/60 shadow-clay-sm flex items-center justify-center">
                   <Pencil className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-800 text-base">Chỉnh sửa bài luyện tập</h3>
-                  <p className="text-xs text-slate-500">Cập nhật tiêu đề và mô tả của bài tập này</p>
+                  <h3 className="font-extrabold text-cocoa-900 text-base">Chỉnh sửa bài luyện tập</h3>
+                  <p className="text-xs text-cocoa-500">Cập nhật tiêu đề và mô tả của bài tập này</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsEditing(false)}
                 disabled={savingEdit}
-                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-lg transition"
+                className="text-cocoa-400 hover:text-cocoa-700 p-2 hover:bg-linen-200/80 rounded-full transition"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1067,14 +1039,14 @@ export default function PracticeSessionPage() {
 
             <form onSubmit={handleSaveEdit} className="p-6 space-y-4">
               {editError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs">
+                <div className="p-3.5 bg-berry-100 border border-berry-200 text-berry-700 rounded-[18px] text-xs font-bold">
                   {editError}
                 </div>
               )}
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Tiêu đề bài tập <span className="text-rose-500">*</span>
+                <label className="block text-xs font-extrabold text-cocoa-700 uppercase tracking-wider">
+                  Tiêu đề bài tập <span className="text-berry-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -1083,12 +1055,12 @@ export default function PracticeSessionPage() {
                   placeholder="Ví dụ: Ôn tập HSK1 - Đại từ & Chào hỏi"
                   required
                   autoFocus
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                  className="w-full clay-input px-4 py-2.5 text-sm"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <label className="block text-xs font-extrabold text-cocoa-700 uppercase tracking-wider">
                   Mô tả ngắn nội dung bài tập
                 </label>
                 <textarea
@@ -1096,16 +1068,16 @@ export default function PracticeSessionPage() {
                   value={editDescription}
                   onChange={(e) => setEditDescription(e.target.value)}
                   placeholder="Ví dụ: Luyện viết các câu hỏi mua sắm, giá cả, và cấu trúc câu..."
-                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition resize-none"
+                  className="w-full clay-input px-4 py-2.5 text-sm resize-none"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-cocoa-400/15">
                 <button
                   type="button"
                   onClick={() => setIsEditing(false)}
                   disabled={savingEdit}
-                  className="px-4 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl text-sm font-medium transition"
+                  className="clay-btn-cream px-5 py-2.5 text-sm"
                 >
                   Hủy
                 </button>
@@ -1113,7 +1085,7 @@ export default function PracticeSessionPage() {
                 <button
                   type="submit"
                   disabled={savingEdit}
-                  className="flex items-center gap-1.5 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition shadow-sm"
+                  className="clay-btn-peach flex items-center gap-1.5 px-5 py-2.5 text-sm"
                 >
                   {savingEdit ? (
                     <>
