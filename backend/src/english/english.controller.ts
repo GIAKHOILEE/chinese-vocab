@@ -1,22 +1,21 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { EnglishService } from './english.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 
+@UseGuards(JwtAuthGuard)
 @Controller('english')
 export class EnglishController {
   constructor(private readonly englishService: EnglishService) {}
 
   @Get('summary')
-  getSummary() {
-    return this.englishService.getSummary();
-  }
-
-  @Post('sync')
-  syncCurriculum() {
-    return this.englishService.syncCurriculum();
+  getSummary(@CurrentUser() user: AuthUser) {
+    return this.englishService.getSummary(user.id);
   }
 
   @Patch('profile')
   updateProfile(
+    @CurrentUser() user: AuthUser,
     @Body()
     body: {
       currentLevel?: string;
@@ -27,7 +26,7 @@ export class EnglishController {
       preferredModel?: string;
     },
   ) {
-    return this.englishService.updateProfile(body);
+    return this.englishService.updateProfile(user.id, body);
   }
 
   @Get('placement-test')
@@ -37,43 +36,51 @@ export class EnglishController {
 
   @Post('placement-submit')
   submitPlacementTest(
+    @CurrentUser() user: AuthUser,
     @Body() body: { answers: Record<string, number>; writingSamples?: Record<string, string>; model?: string },
   ) {
-    return this.englishService.submitPlacementTest(body);
+    return this.englishService.submitPlacementTest(user.id, body);
   }
 
   @Get('today')
-  getTodayPlan(@Query('topic') topic?: string, @Query('level') level?: string) {
-    return this.englishService.getTodayPlan(topic, level);
-  }
-
-  @Post('ai-expand')
-  aiExpandWords(@Body() body: { cefrLevel: string; topic?: string; count?: number; model?: string }) {
-    return this.englishService.aiExpandWords(body.cefrLevel, body.topic, body.count || 20, body.model);
+  getTodayPlan(
+    @CurrentUser() user: AuthUser,
+    @Query('topic') topic?: string,
+    @Query('level') level?: string,
+  ) {
+    return this.englishService.getTodayPlan(user.id, topic, level);
   }
 
   @Post('srs-review')
-  submitSrsReview(@Body() body: { id: string; quality: 'again' | 'hard' | 'good' | 'easy' }) {
-    return this.englishService.submitSrsReview(body.id, body.quality);
+  submitSrsReview(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { id: string; quality: 'again' | 'hard' | 'good' | 'easy' },
+  ) {
+    return this.englishService.submitSrsReview(user.id, body.id, body.quality);
   }
 
   @Post('word-deep-dive')
-  getWordDeepDive(@Body() body: { id: string; model?: string }) {
-    return this.englishService.getWordDeepDive(body.id, body.model);
+  getWordDeepDive(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { id: string; model?: string },
+  ) {
+    return this.englishService.getWordDeepDive(user.id, body.id, body.model);
   }
 
   @Post('topic-dialogue')
   generateTopicDialogue(
+    @CurrentUser() user: AuthUser,
     @Body() body: { newWordIds: string[]; oldWordIds?: string[]; topic?: string; cefrLevel?: string; model?: string },
   ) {
-    return this.englishService.generateTopicDialogue(body);
+    return this.englishService.generateTopicDialogue(user.id, body);
   }
 
   @Post('mixed-practice')
   generateMixedPractice(
+    @CurrentUser() user: AuthUser,
     @Body() body: { newWordIds: string[]; reviewWordIds: string[]; grammarIds: string[]; cefrLevel?: string; model?: string },
   ) {
-    return this.englishService.generateMixedPractice(body);
+    return this.englishService.generateMixedPractice(user.id, body);
   }
 
   @Post('evaluate')
@@ -113,6 +120,7 @@ export class EnglishController {
 
   @Post('complete-day')
   completeDailySession(
+    @CurrentUser() user: AuthUser,
     @Body()
     body: {
       minutesSpent: number;
@@ -122,21 +130,25 @@ export class EnglishController {
       model?: string;
     },
   ) {
-    return this.englishService.completeDailySession(body);
+    return this.englishService.completeDailySession(user.id, body);
   }
 
   @Get('vocab')
-  getVocabList(@Query('level') level?: string) {
-    return this.englishService.getVocabList(level);
+  getVocabList(@CurrentUser() user: AuthUser, @Query('level') level?: string) {
+    return this.englishService.getVocabList(user.id, level);
   }
 
   @Get('grammar')
-  getGrammarList(@Query('level') level?: string) {
-    return this.englishService.getGrammarList(level);
+  getGrammarList(@CurrentUser() user: AuthUser, @Query('level') level?: string) {
+    return this.englishService.getGrammarList(user.id, level);
   }
 
   @Patch('grammar/:id/status')
-  updateGrammarStatus(@Param('id') id: string, @Body() body: { status: 'new' | 'learning' | 'mastered' }) {
-    return this.englishService.updateGrammarStatus(id, body.status);
+  updateGrammarStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { status: 'new' | 'learning' | 'mastered' },
+  ) {
+    return this.englishService.updateGrammarStatus(user.id, id, body.status);
   }
 }

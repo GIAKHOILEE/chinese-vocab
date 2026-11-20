@@ -1,9 +1,15 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PinyinService } from '../chinese/pinyin.service';
 import { CreateVocabularyDto } from './dto/create-vocabulary.dto';
 import { BulkPasteDto, BulkVocabularyDto } from './dto/bulk-vocabulary.dto';
 import { UpdateVocabularyDto } from './dto/update-vocabulary.dto';
+import { AuthUser } from '../auth/current-user.decorator';
 import { parse } from 'csv-parse/sync';
 
 @Injectable()
@@ -17,49 +23,61 @@ export class VocabularyService {
     return `${word}|||${partOfSpeech}`;
   }
 
-  private async findExistingKeySet(words: string[]): Promise<Set<string>> {
+  private async findExistingKeySet(userId: string, words: string[]): Promise<Set<string>> {
     if (words.length === 0) return new Set();
     const existingVocabs = await this.prisma.vocabulary.findMany({
-      where: { word: { in: words } },
+      where: {
+        word: { in: words },
+        scopeKey: { in: ['GLOBAL', userId] },
+      },
       select: { word: true, partOfSpeech: true },
     });
     return new Set(existingVocabs.map((v) => this.makeKey(v.word, v.partOfSpeech || '')));
   }
 
   /**
-   * Lấy danh sách từ vựng có hỗ trợ tìm kiếm theo từ/nghĩa và lọc theo cấp độ (Level) và từ loại
+   * Lấy danh sách từ vựng hiển thị cho user (kho chung + từ cá nhân)
    */
-  async findAll(search?: string, level?: string, partOfSpeech?: string) {
-    const where: any = {};
+  async findAll(userId: string, search?: string, level?: string, partOfSpeech?: string) {
+    const andFilters: any[] = [
+      { OR: [{ ownerId: null }, { ownerId: userId }] },
+    ];
 
     if (search && search.trim()) {
       const query = search.trim();
-      where.OR = [
-        { word: { contains: query, mode: 'insensitive' } },
-        { meaning: { contains: query, mode: 'insensitive' } },
-        { pinyin: { contains: query, mode: 'insensitive' } },
-      ];
+      andFilters.push({
+        OR: [
+          { word: { contains: query, mode: 'insensitive' } },
+          { meaning: { contains: query, mode: 'insensitive' } },
+          { pinyin: { contains: query, mode: 'insensitive' } },
+        ],
+      });
     }
 
     if (level && level.trim() && level !== 'ALL') {
-      where.level = level.trim();
+      andFilters.push({ level: level.trim() });
     }
 
     if (partOfSpeech && partOfSpeech.trim() && partOfSpeech !== 'ALL') {
-      where.partOfSpeech = partOfSpeech === 'UNSET' ? '' : partOfSpeech.trim();
+      andFilters.push({ partOfSpeech: partOfSpeech === 'UNSET' ? '' : partOfSpeech.trim() });
     }
 
     return this.prisma.vocabulary.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
+      where: { AND: andFilters },
+      orderBy: [{ createdAt: 'desc' }],
     });
   }
 
   /**
-   * Xem chi tiết một từ vựng
+   * Xem chi tiết một từ vựng (nếu nằm trong kho chung hoặc thuộc user)
    */
-  async findOne(id: string) {
-    const vocab = await this.prisma.vocabulary.findUnique({ where: { id } });
+  async findOne(userId: string, id: string) {
+    const vocab = await this.prisma.vocabulary.findFirst({
+      where: {
+        id,
+        OR: [{ ownerId: null }, { ownerId: userId }],
+      },
+    });
     if (!vocab) {
       throw new NotFoundException(`Không tìm thấy từ vựng với ID: ${id}`);
     }
@@ -67,19 +85,17 @@ export class VocabularyService {
   }
 
   /**
-   * Tạo một từ vựng mới thủ công (chỉ chặn trùng khi trùng cả từ tiếng Trung và từ loại)
+   * Tạo một từ vựng mới thủ công cho user hiện tại
    */
-  async create(dto: CreateVocabularyDto) {
+  async create(userId: string, dto: CreateVocabularyDto) {
     const cleanWord = dto.word.trim();
     const cleanPartOfSpeech = dto.partOfSpeech?.trim() || '';
 
-    // Kiểm tra xem cặp (từ tiếng Trung, từ loại) đã tồn tại chưa
-    const existing = await this.prisma.vocabulary.findUnique({
+    const existing = await this.prisma.vocabulary.findFirst({
       where: {
-        word_partOfSpeech: {
-          word: cleanWord,
-          partOfSpeech: cleanPartOfSpeech,
-        },
+        word: cleanWord,
+        partOfSpeech: cleanPartOfSpeech,
+        scopeKey: { in: ['GLOBAL', userId] },
       },
     });
 
@@ -97,25 +113,27 @@ export class VocabularyService {
 
     return this.prisma.vocabulary.create({
       data: {
+        ownerId: userId,
+        scopeKey: userId,
         word: cleanWord,
         meaning: dto.meaning.trim(),
         pinyin: pinyinValue,
         partOfSpeech: cleanPartOfSpeech,
         level: dto.level?.trim() || 'HSK1',
+        topic: dto.topic?.trim() || 'Từ vựng cá nhân',
       },
     });
   }
 
   /**
-   * Xử lý paste nhiều dòng từ vựng (tự động lọc bỏ các từ trùng cả từ và từ loại)
+   * Xử lý paste nhiều dòng từ vựng cho user hiện tại
    */
-  async bulkPaste(dto: BulkPasteDto) {
+  async bulkPaste(userId: string, dto: BulkPasteDto) {
     const lines = dto.text
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
 
-    // Tách từ vựng và loại bỏ các dòng bị trùng (word + partOfSpeech) trong cùng một lần paste
     const parsedItems: {
       word: string;
       meaning: string;
@@ -150,13 +168,15 @@ export class VocabularyService {
       return { message: 'Không có từ vựng hợp lệ để thêm.', count: 0, skippedCount: 0 };
     }
 
-    const existingKeySet = await this.findExistingKeySet(Array.from(uniqueWords));
+    const existingKeySet = await this.findExistingKeySet(userId, Array.from(uniqueWords));
     const newItems = parsedItems.filter(
       (item) => !existingKeySet.has(this.makeKey(item.word, item.partOfSpeech)),
     );
     const skippedCount = parsedItems.length - newItems.length;
 
     const dataToInsert = newItems.map((item) => ({
+      ownerId: userId,
+      scopeKey: userId,
       word: item.word,
       meaning: item.meaning,
       partOfSpeech: item.partOfSpeech,
@@ -165,11 +185,13 @@ export class VocabularyService {
           ? item.pinyinInput.trim()
           : this.pinyinService.generatePinyin(item.word),
       level: item.levelInput,
+      topic: 'Từ vựng cá nhân',
     }));
 
     if (dataToInsert.length > 0) {
       await this.prisma.vocabulary.createMany({
         data: dataToInsert,
+        skipDuplicates: true,
       });
     }
 
@@ -186,9 +208,9 @@ export class VocabularyService {
   }
 
   /**
-   * Nhập từ vựng trực tiếp từ mảng đã được xác thực (bỏ qua trùng lặp word + partOfSpeech)
+   * Nhập từ vựng trực tiếp từ mảng
    */
-  async bulkInsert(dto: BulkVocabularyDto) {
+  async bulkInsert(userId: string, dto: BulkVocabularyDto) {
     const seenKeys = new Set<string>();
     const uniqueWords = new Set<string>();
     const dedupedItems: {
@@ -197,6 +219,7 @@ export class VocabularyService {
       partOfSpeech: string;
       pinyin?: string;
       level?: string;
+      topic?: string;
     }[] = [];
 
     for (const item of dto.items) {
@@ -214,16 +237,19 @@ export class VocabularyService {
         partOfSpeech,
         pinyin: item.pinyin,
         level: item.level,
+        topic: item.topic,
       });
     }
 
-    const existingKeySet = await this.findExistingKeySet(Array.from(uniqueWords));
+    const existingKeySet = await this.findExistingKeySet(userId, Array.from(uniqueWords));
     const newItems = dedupedItems.filter(
       (item) => !existingKeySet.has(this.makeKey(item.word, item.partOfSpeech)),
     );
     const skippedCount = dto.items.length - newItems.length;
 
     const dataToInsert = newItems.map((item) => ({
+      ownerId: userId,
+      scopeKey: userId,
       word: item.word,
       meaning: item.meaning,
       partOfSpeech: item.partOfSpeech,
@@ -232,11 +258,13 @@ export class VocabularyService {
           ? item.pinyin.trim()
           : this.pinyinService.generatePinyin(item.word),
       level: item.level?.trim() || 'HSK1',
+      topic: item.topic?.trim() || 'Từ vựng cá nhân',
     }));
 
     if (dataToInsert.length > 0) {
       await this.prisma.vocabulary.createMany({
         data: dataToInsert,
+        skipDuplicates: true,
       });
     }
 
@@ -253,9 +281,9 @@ export class VocabularyService {
   }
 
   /**
-   * Import dữ liệu từ vựng từ file CSV (bỏ qua các từ trùng lặp word + partOfSpeech)
+   * Import CSV
    */
-  async importCsv(csvContent: string) {
+  async importCsv(userId: string, csvContent: string) {
     const records = parse(csvContent, {
       columns: true,
       skip_empty_lines: true,
@@ -263,11 +291,14 @@ export class VocabularyService {
     });
 
     const parsedItems: {
+      ownerId: string;
+      scopeKey: string;
       word: string;
       meaning: string;
       partOfSpeech: string;
       pinyin: string;
       level: string;
+      topic: string;
     }[] = [];
     const seenKeys = new Set<string>();
     const uniqueWords = new Set<string>();
@@ -293,17 +324,21 @@ export class VocabularyService {
       const meaning = (record.meaning || record.Meaning || record.vietnamese || word).trim();
       const pinyinInput = (record.pinyin || record.Pinyin || '').trim();
       const level = (record.level || record.Level || 'HSK1').trim();
+      const topic = (record.topic || record.Topic || 'Từ vựng cá nhân').trim();
 
       const pinyinValue = pinyinInput
         ? pinyinInput
         : this.pinyinService.generatePinyin(word);
 
       parsedItems.push({
+        ownerId: userId,
+        scopeKey: userId,
         word,
         meaning,
         partOfSpeech,
         pinyin: pinyinValue,
         level,
+        topic,
       });
     }
 
@@ -311,7 +346,7 @@ export class VocabularyService {
       return { message: 'File CSV không chứa từ vựng hợp lệ.', count: 0, skippedCount: 0 };
     }
 
-    const existingKeySet = await this.findExistingKeySet(Array.from(uniqueWords));
+    const existingKeySet = await this.findExistingKeySet(userId, Array.from(uniqueWords));
     const newItems = parsedItems.filter(
       (item) => !existingKeySet.has(this.makeKey(item.word, item.partOfSpeech)),
     );
@@ -320,6 +355,7 @@ export class VocabularyService {
     if (newItems.length > 0) {
       await this.prisma.vocabulary.createMany({
         data: newItems,
+        skipDuplicates: true,
       });
     }
 
@@ -338,20 +374,23 @@ export class VocabularyService {
   /**
    * Cập nhật thông tin từ vựng
    */
-  async update(id: string, dto: UpdateVocabularyDto) {
-    const current = await this.findOne(id); // Kiểm tra tồn tại
+  async update(user: AuthUser, id: string, dto: UpdateVocabularyDto) {
+    const current = await this.findOne(user.id, id);
+
+    if (current.ownerId !== user.id && user.role !== 'ADMIN') {
+      throw new ForbiddenException('Chỉ có thể chỉnh sửa từ vựng cá nhân do bạn tự thêm.');
+    }
 
     const nextWord = dto.word !== undefined ? dto.word.trim() : current.word;
     const nextPos =
       dto.partOfSpeech !== undefined ? dto.partOfSpeech.trim() : current.partOfSpeech;
 
     if (nextWord !== current.word || nextPos !== current.partOfSpeech) {
-      const duplicate = await this.prisma.vocabulary.findUnique({
+      const duplicate = await this.prisma.vocabulary.findFirst({
         where: {
-          word_partOfSpeech: {
-            word: nextWord,
-            partOfSpeech: nextPos,
-          },
+          word: nextWord,
+          partOfSpeech: nextPos,
+          scopeKey: current.scopeKey,
         },
       });
       if (duplicate && duplicate.id !== id) {
@@ -366,6 +405,7 @@ export class VocabularyService {
     if (dto.word !== undefined) data.word = nextWord;
     if (dto.meaning !== undefined) data.meaning = dto.meaning.trim();
     if (dto.partOfSpeech !== undefined) data.partOfSpeech = nextPos;
+    if (dto.topic !== undefined) data.topic = dto.topic.trim();
     if (dto.word && !dto.pinyin) {
       data.pinyin = this.pinyinService.generatePinyin(nextWord);
     }
@@ -379,8 +419,11 @@ export class VocabularyService {
   /**
    * Xóa một từ vựng
    */
-  async remove(id: string) {
-    await this.findOne(id);
+  async remove(user: AuthUser, id: string) {
+    const current = await this.findOne(user.id, id);
+    if (current.ownerId !== user.id && user.role !== 'ADMIN') {
+      throw new ForbiddenException('Không thể xóa từ vựng chuẩn dùng chung của hệ thống.');
+    }
     return this.prisma.vocabulary.delete({ where: { id } });
   }
 }

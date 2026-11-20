@@ -1,59 +1,54 @@
 import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { geminiContextStorage } from './gemini-context';
 
 @Injectable()
 export class GeminiService {
-  private readonly apiKey: string;
-  private readonly modelName: string;
-
-  constructor(private readonly configService: ConfigService) {
-    this.apiKey = this.configService.get<string>('GEMINI_API_KEY') || '';
-    this.modelName = this.configService.get<string>('GEMINI_MODEL') || 'gemini-3.5-flash';
-  }
+  private readonly defaultModel = 'gemini-3-flash-preview';
 
   /**
-   * Gửi prompt tới Google Gemini Cloud API và nhận phản hồi văn bản định dạng JSON
-   * @param prompt Văn bản prompt gửi cho Gemini AI
-   * @returns Phản hồi JSON văn bản từ model Gemini
+   * Gửi prompt tới Google Gemini Cloud API sử dụng API Key của người dùng gửi theo request
    */
   async generateText(
     prompt: string,
     options?: {
+      apiKey?: string;
       model?: string;
       systemInstruction?: string;
       temperature?: number;
     },
   ): Promise<string> {
-    if (!this.apiKey || !this.apiKey.trim()) {
+    const ctx = geminiContextStorage.getStore();
+    const apiKey = (options?.apiKey || ctx?.apiKey || '').trim();
+
+    if (!apiKey) {
       throw new BadRequestException(
-        'Chưa cấu hình GEMINI_API_KEY trong file backend/.env. Vui lòng kiểm tra lại biến môi trường.',
+        'Bạn chưa nhập Gemini API Key. Hãy dán key lấy từ Google AI Studio (aistudio.google.com) vào thanh công cụ phía trên để sử dụng tính năng AI.',
       );
     }
 
-    const requestedModel = options?.model?.trim() || this.modelName;
+    const requestedModel = (options?.model || ctx?.model || this.defaultModel).trim();
     const candidateModels = Array.from(
       new Set([
         requestedModel,
-        'gemini-2.5-flash',
         'gemini-3-flash-preview',
         'gemini-3.1-flash-lite-preview',
-        'gemini-2.5-flash-lite',
-        'gemini-2.5-pro',
         'gemini-flash-latest',
+        'gemini-3.8-flash',
+        'gemini-3.1-pro-preview',
       ]),
     );
 
     const systemText =
       options?.systemInstruction ||
-      'You are a Chinese language exercise generator. You MUST output your response strictly as a valid JSON object.';
+      'You are a language learning exercise generator and tutor. You MUST output your response strictly as a valid JSON object.';
     const temperature = options?.temperature ?? 0.3;
 
     let lastError: any;
 
     for (const model of candidateModels) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey.trim()}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
         const response = await axios.post(
           url,
@@ -61,19 +56,11 @@ export class GeminiService {
             contents: [
               {
                 role: 'user',
-                parts: [
-                  {
-                    text: prompt,
-                  },
-                ],
+                parts: [{ text: prompt }],
               },
             ],
             systemInstruction: {
-              parts: [
-                {
-                  text: systemText,
-                },
-              ],
+              parts: [{ text: systemText }],
             },
             generationConfig: {
               temperature,
@@ -81,9 +68,7 @@ export class GeminiService {
             },
           },
           {
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             timeout: 60000,
           },
         );
@@ -97,7 +82,6 @@ export class GeminiService {
       } catch (error: any) {
         lastError = error;
         const status = error.response?.status;
-        // Nếu model không tồn tại (404), quá tải tạm thời (429/503) hoặc timeout, thử fallback sang model kế tiếp
         if (status === 404 || status === 503 || status === 429 || error.code === 'ECONNABORTED') {
           console.warn(`Model ${model} gặp lỗi (${status || error.code}), thử fallback...`);
           continue;
@@ -115,10 +99,21 @@ export class GeminiService {
           ? errorData.message || JSON.stringify(errorData)
           : errorData;
 
+      if (
+        status === 400 ||
+        status === 401 ||
+        status === 403 ||
+        String(errorMsg).toUpperCase().includes('API_KEY_INVALID')
+      ) {
+        throw new BadRequestException(
+          'Gemini API Key không hợp lệ hoặc không có quyền truy cập. Vui lòng kiểm tra lại key lấy từ Google AI Studio (aistudio.google.com).',
+        );
+      }
+
       if (status === 429 || String(errorMsg).includes('RESOURCE_EXHAUSTED')) {
         console.warn('Google Gemini API Rate limit:', errorMsg);
         throw new BadRequestException(
-          'Hệ thống AI Gemini đang tạm thời bận (Rate Limit). Vui lòng đợi vài giây rồi thử lại.',
+          'Gemini API Key của bạn đang tạm thời chạm giới hạn (Rate Limit). Vui lòng đợi vài giây rồi thử lại.',
         );
       }
 

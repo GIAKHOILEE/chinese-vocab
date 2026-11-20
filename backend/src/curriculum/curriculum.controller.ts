@@ -1,31 +1,48 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { CurriculumService } from './curriculum.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 
+@UseGuards(JwtAuthGuard)
 @Controller('curriculum')
 export class CurriculumController {
   constructor(private readonly curriculumService: CurriculumService) {}
 
   @Get('summary')
-  getDashboardSummary() {
-    return this.curriculumService.getDashboardSummary();
+  getDashboardSummary(@CurrentUser() user: AuthUser) {
+    return this.curriculumService.getDashboardSummary(user.id);
   }
 
   @Get('today')
-  getTodayPlan(@Query('topic') topic?: string) {
-    return this.curriculumService.getTodayPlan(topic);
+  getTodayPlan(
+    @CurrentUser() user: AuthUser,
+    @Query('topic') topic?: string,
+    @Query('level') level?: string,
+  ) {
+    return this.curriculumService.getTodayPlan(user.id, topic, level);
   }
 
   @Post('topic-dialogue')
   generateTopicDialogue(
-    @Body() body: { newWordIds: string[]; oldWordIds?: string[]; topic?: string; model?: string },
+    @CurrentUser() user: AuthUser,
+    @Body()
+    body: {
+      newWordIds: string[];
+      oldWordIds?: string[];
+      topic?: string;
+      level?: string;
+      model?: string;
+    },
   ) {
-    return this.curriculumService.generateTopicDialogue(body);
+    return this.curriculumService.generateTopicDialogue(user.id, body);
   }
 
   @Patch('profile')
   updateProfile(
+    @CurrentUser() user: AuthUser,
     @Body()
     body: {
+      currentLevel?: string;
       dailyMinutesTarget?: number;
       newWordsPerDay?: number;
       reviewWordsPerDay?: number;
@@ -33,38 +50,43 @@ export class CurriculumController {
       preferredModel?: string;
     },
   ) {
-    return this.curriculumService.updateProfile(body);
-  }
-
-  @Post('sync-hsk2')
-  syncHsk2Curriculum() {
-    return this.curriculumService.syncHsk2Curriculum();
-  }
-
-  @Post('ai-expand-hsk2')
-  aiExpandHsk2Words(@Body() body: { topic?: string; count?: number; model?: string }) {
-    return this.curriculumService.aiExpandHsk2Words(body.topic, body.count || 25, body.model);
+    return this.curriculumService.updateProfile(user.id, body);
   }
 
   @Post('srs-review')
-  submitSrsReview(@Body() body: { vocabularyId: string; quality: 'again' | 'hard' | 'good' | 'easy' }) {
-    return this.curriculumService.submitSrsReview(body.vocabularyId, body.quality);
+  submitSrsReview(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { vocabularyId: string; quality: 'again' | 'hard' | 'good' | 'easy' },
+  ) {
+    return this.curriculumService.submitSrsReview(user.id, body.vocabularyId, body.quality);
   }
 
   @Post('word-deep-dive')
-  getWordDeepDive(@Body() body: { vocabularyId: string; model?: string }) {
-    return this.curriculumService.getWordDeepDive(body.vocabularyId, body.model);
+  getWordDeepDive(
+    @CurrentUser() user: AuthUser,
+    @Body() body: { vocabularyId: string; model?: string },
+  ) {
+    return this.curriculumService.getWordDeepDive(user.id, body.vocabularyId, body.model);
   }
 
   @Post('mixed-practice')
   generateMixedPractice(
-    @Body() body: { newWordIds: string[]; reviewWordIds: string[]; grammarIds: string[]; model?: string },
+    @CurrentUser() user: AuthUser,
+    @Body()
+    body: {
+      newWordIds: string[];
+      reviewWordIds: string[];
+      grammarIds: string[];
+      level?: string;
+      model?: string;
+    },
   ) {
-    return this.curriculumService.generateMixedPractice(body);
+    return this.curriculumService.generateMixedPractice(user.id, body);
   }
 
   @Post('evaluate')
   evaluateAttempt(
+    @CurrentUser() user: AuthUser,
     @Body()
     body: {
       promptVietnamese: string;
@@ -72,14 +94,16 @@ export class CurriculumController {
       targetWords?: string[];
       grammarTitle?: string;
       userChinese: string;
+      level?: string;
       model?: string;
     },
   ) {
-    return this.curriculumService.evaluateAttempt(body);
+    return this.curriculumService.evaluateAttempt(user.id, body);
   }
 
   @Post('evaluate-batch')
   evaluateBatch(
+    @CurrentUser() user: AuthUser,
     @Body()
     body: {
       items: Array<{
@@ -90,14 +114,16 @@ export class CurriculumController {
         grammarTitle?: string;
         userChinese: string;
       }>;
+      level?: string;
       model?: string;
     },
   ) {
-    return this.curriculumService.evaluateBatch(body);
+    return this.curriculumService.evaluateBatch(user.id, body);
   }
 
   @Post('complete-day')
   completeDailySession(
+    @CurrentUser() user: AuthUser,
     @Body()
     body: {
       minutesSpent: number;
@@ -109,16 +135,20 @@ export class CurriculumController {
       model?: string;
     },
   ) {
-    return this.curriculumService.completeDailySession(body);
+    return this.curriculumService.completeDailySession(user.id, body);
   }
 
   @Get('grammar')
-  getGrammarList() {
-    return this.curriculumService.getGrammarList();
+  getGrammarList(@CurrentUser() user: AuthUser, @Query('level') level?: string) {
+    return this.curriculumService.getGrammarList(user.id, level);
   }
 
   @Patch('grammar/:id/status')
-  updateGrammarStatus(@Param('id') id: string, @Body() body: { status: 'new' | 'learning' | 'mastered' }) {
-    return this.curriculumService.updateGrammarStatus(id, body.status);
+  updateGrammarStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { status: 'new' | 'learning' | 'mastered' },
+  ) {
+    return this.curriculumService.updateGrammarStatus(user.id, id, body.status);
   }
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
 import {
   BookOpen,
   GraduationCap,
@@ -15,6 +16,7 @@ import {
 } from 'lucide-react';
 
 export default function EnglishDashboardPage() {
+  const { user } = useAuth();
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -69,7 +71,7 @@ export default function EnglishDashboardPage() {
           <div className="relative flex items-start justify-between gap-3">
             <div>
               <span className="text-xs font-extrabold uppercase tracking-wider text-sage-700">
-                Hồ sơ trình độ
+                Hồ sơ của {user?.displayName || user?.username}
               </span>
               <h2 className="text-xl font-extrabold text-cocoa-900 mt-1">
                 {summary

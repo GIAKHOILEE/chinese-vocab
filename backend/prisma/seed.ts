@@ -1,85 +1,147 @@
 import { PrismaClient } from '@prisma/client';
-import { pinyin } from 'pinyin-pro';
+import * as bcrypt from 'bcryptjs';
+import { HSK_VOCAB_DATA } from '../src/curriculum/data/hsk-curriculum.data';
+import { HSK1_GRAMMAR_DATA } from '../src/curriculum/data/hsk1-grammar.data';
+import { HSK2_GRAMMAR_DATA } from '../src/curriculum/data/hsk2-grammar.data';
+import { HSK3_GRAMMAR_DATA } from '../src/curriculum/data/hsk3-grammar.data';
+import { ENGLISH_VOCAB_DATA } from '../src/english/data/english-vocab.data';
+import { ENGLISH_GRAMMAR_DATA } from '../src/english/data/english-grammar.data';
 
 const prisma = new PrismaClient();
 
-const initialVocabulary = [
-  { word: '我', meaning: 'tôi', partOfSpeech: 'Đại từ', level: 'HSK1' },
-  { word: '你', meaning: 'bạn', partOfSpeech: 'Đại từ', level: 'HSK1' },
-  { word: '他', meaning: 'anh ấy', partOfSpeech: 'Đại từ', level: 'HSK1' },
-  { word: '是', meaning: 'là', partOfSpeech: 'Động từ', level: 'HSK1' },
-  { word: '学生', meaning: 'học sinh', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '老师', meaning: 'giáo viên', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '朋友', meaning: 'bạn bè', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '学习', meaning: 'học', partOfSpeech: 'Động từ', level: 'HSK1' },
-  { word: '中文', meaning: 'tiếng Trung', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '学校', meaning: 'trường học', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '喜欢', meaning: 'thích', partOfSpeech: 'Động từ', level: 'HSK1' },
-  { word: '吃', meaning: 'ăn', partOfSpeech: 'Động từ', level: 'HSK1' },
-  { word: '喝', meaning: 'uống', partOfSpeech: 'Động từ', level: 'HSK1' },
-  { word: '水', meaning: 'nước', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '饭', meaning: 'cơm', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '今天', meaning: 'hôm nay', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '明天', meaning: 'ngày mai', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '昨天', meaning: 'hôm qua', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '家', meaning: 'nhà', partOfSpeech: 'Danh từ', level: 'HSK1' },
-  { word: '工作', meaning: 'làm việc', partOfSpeech: 'Động từ', level: 'HSK1' },
-];
-
 async function main() {
-  console.log('Bắt đầu seed dữ liệu mẫu...');
+  console.log('Bắt đầu seed dữ liệu đa người dùng & giáo trình chuẩn...');
 
-  // 1. Thêm 20 từ vựng HSK1
-  const createdVocabIds: string[] = [];
-  for (const item of initialVocabulary) {
-    const py = pinyin(item.word, { toneType: 'symbol', type: 'string' });
-    const vocab = await prisma.vocabulary.create({
+  // 1. Tạo tài khoản mặc định nếu chưa có user nào
+  const userCount = await prisma.user.count();
+  let defaultUserId: string;
+
+  if (userCount === 0) {
+    const passwordHash = await bcrypt.hash('123456', 10);
+    const admin = await prisma.user.create({
       data: {
-        word: item.word,
-        meaning: item.meaning,
-        pinyin: py,
-        partOfSpeech: item.partOfSpeech,
-        level: item.level,
+        username: 'admin',
+        email: 'admin@example.com',
+        passwordHash,
+        displayName: 'Học viên chính',
+        role: 'ADMIN',
       },
     });
-    createdVocabIds.push(vocab.id);
+    defaultUserId = admin.id;
+
+    await prisma.studyProfile.create({
+      data: {
+        userId: defaultUserId,
+        currentLevel: 'HSK1',
+        dailyMinutesTarget: 90,
+        newWordsPerDay: 15,
+        reviewWordsPerDay: 25,
+        grammarPerDay: 1,
+        preferredModel: 'gemini-3-flash-preview',
+        currentDayNumber: 1,
+      },
+    });
+
+    await prisma.englishProfile.create({
+      data: {
+        userId: defaultUserId,
+        currentLevel: 'A1',
+        placementDone: false,
+        dailyMinutesTarget: 60,
+        newWordsPerDay: 12,
+        reviewWordsPerDay: 20,
+        grammarPerDay: 1,
+        preferredModel: 'gemini-3-flash-preview',
+        currentDayNumber: 1,
+      },
+    });
+
+    console.log('Đã tạo tài khoản mặc định: admin / 123456');
+  } else {
+    const first = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' } });
+    defaultUserId = first!.id;
   }
 
-  console.log(`Đã seed thành công ${createdVocabIds.length} từ vựng HSK1 mẫu.`);
+  // 2. Seed kho từ vựng HSK 1-3 dùng chung
+  const zhChunk = 500;
+  let zhAdded = 0;
+  for (let i = 0; i < HSK_VOCAB_DATA.length; i += zhChunk) {
+    const batch = HSK_VOCAB_DATA.slice(i, i + zhChunk).map((item) => ({
+      ownerId: null,
+      scopeKey: 'GLOBAL',
+      word: item.word,
+      meaning: item.meaning,
+      pinyin: item.pinyin,
+      partOfSpeech: item.partOfSpeech || '',
+      level: item.level,
+      topic: item.topic || 'Từ vựng cốt lõi',
+    }));
+    const res = await prisma.vocabulary.createMany({ data: batch, skipDuplicates: true });
+    zhAdded += res.count;
+  }
+  console.log(`Đã seed +${zhAdded} từ vựng HSK 1-3 dùng chung.`);
 
-  // 2. Tạo một bộ bài tập mẫu
-  const samplePractice = await prisma.practiceSet.create({
-    data: {
-      title: 'Bài tập mẫu HSK1 (2026-09-09)',
-      vocabularyIds: createdVocabIds,
-      difficulty: 'HSK1',
-      questionCount: 3,
-      questions: {
-        create: [
-          {
-            vietnamese: 'Tôi thích học tiếng Trung.',
-            chinese: '我喜欢学习中文。',
-            pinyin: 'Wǒ xǐhuan xuéxí Zhōngwén.',
-            usedVocabulary: ['我', '喜欢', '学习', '中文'],
-          },
-          {
-            vietnamese: 'Tôi và bạn bè cùng nhau học tập.',
-            chinese: '我和朋友一起学习。',
-            pinyin: 'Wǒ hé péngyou yīqǐ xuéxí.',
-            usedVocabulary: ['我', '朋友', '学习'],
-          },
-          {
-            vietnamese: 'Tôi thích học ở trường học.',
-            chinese: '我喜欢在学校学习。',
-            pinyin: 'Wǒ xǐhuan zài xuéxiào xuéxí.',
-            usedVocabulary: ['我', '喜欢', '学校', '学习'],
-          },
-        ],
+  // 3. Seed ngữ pháp HSK 1-3 dùng chung
+  const allZhGrammar = [
+    ...HSK1_GRAMMAR_DATA.map((g) => ({ ...g, level: 'HSK1' })),
+    ...HSK2_GRAMMAR_DATA.map((g) => ({ ...g, level: 'HSK2' })),
+    ...HSK3_GRAMMAR_DATA.map((g) => ({ ...g, level: 'HSK3' })),
+  ];
+  for (const g of allZhGrammar) {
+    await prisma.grammarPoint.upsert({
+      where: { title: g.title },
+      create: {
+        level: g.level,
+        unitNumber: g.unitNumber,
+        orderIndex: g.orderIndex,
+        title: g.title,
+        pattern: g.pattern,
+        explanation: g.explanation,
+        commonMistakes: g.commonMistakes,
+        examples: g.examples,
       },
-    },
-  });
+      update: {},
+    });
+  }
+  console.log(`Đã seed ${allZhGrammar.length} điểm ngữ pháp HSK 1-3.`);
 
-  console.log('Đã seed 1 bài luyện tập mẫu với ID:', samplePractice.id);
+  // 4. Seed kho từ vựng Tiếng Anh A1-B2 dùng chung
+  let enAdded = 0;
+  for (let i = 0; i < ENGLISH_VOCAB_DATA.length; i += 500) {
+    const batch = ENGLISH_VOCAB_DATA.slice(i, i + 500).map((item) => ({
+      ownerId: null,
+      scopeKey: 'GLOBAL',
+      word: item.word,
+      ipa: item.ipa || '',
+      meaning: item.meaning,
+      partOfSpeech: item.partOfSpeech || '',
+      cefrLevel: item.cefrLevel,
+      topic: item.topic || 'Daily Life & Greetings',
+      exampleEn: item.exampleEn || '',
+      exampleVi: item.exampleVi || '',
+    }));
+    const res = await prisma.englishVocab.createMany({ data: batch, skipDuplicates: true });
+    enAdded += res.count;
+  }
+  console.log(`Đã seed +${enAdded} từ vựng Tiếng Anh A1-B2 dùng chung.`);
+
+  // 5. Seed ngữ pháp Tiếng Anh A1-B2
+  for (const g of ENGLISH_GRAMMAR_DATA) {
+    await prisma.englishGrammar.upsert({
+      where: { title: g.title },
+      create: {
+        cefrLevel: g.cefrLevel,
+        orderIndex: g.orderIndex,
+        title: g.title,
+        pattern: g.pattern,
+        explanation: g.explanation,
+        commonMistakes: g.commonMistakes,
+        examples: g.examples,
+      },
+      update: {},
+    });
+  }
+  console.log(`Đã seed ${ENGLISH_GRAMMAR_DATA.length} điểm ngữ pháp Tiếng Anh.`);
 }
 
 main()

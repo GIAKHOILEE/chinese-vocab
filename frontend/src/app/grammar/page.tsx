@@ -7,6 +7,7 @@ import { GraduationCap, Volume2, Sparkles, CheckCircle2, AlertTriangle } from 'l
 
 interface GrammarPoint {
   id: string;
+  level: string;
   unitNumber: number;
   orderIndex: number;
   title: string;
@@ -21,6 +22,7 @@ interface GrammarPoint {
 export default function GrammarPage() {
   const [list, setList] = useState<GrammarPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [levelFilter, setLevelFilter] = useState<'ALL' | 'HSK1' | 'HSK2' | 'HSK3'>('ALL');
   const [filter, setFilter] = useState<'all' | 'new' | 'learning' | 'mastered'>('all');
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [evals, setEvals] = useState<Record<string, any>>({});
@@ -60,6 +62,7 @@ export default function GrammarPage() {
         body: JSON.stringify({
           promptVietnamese: `Đặt 1 câu sử dụng ngữ pháp: ${g.title} (${g.pattern})`,
           grammarTitle: g.title,
+          level: g.level,
           userChinese,
         }),
       });
@@ -72,30 +75,47 @@ export default function GrammarPage() {
     }
   }
 
-  const filtered = filter === 'all' ? list : list.filter((g) => g.status === filter);
-  const masteredCount = list.filter((g) => g.status === 'mastered').length;
+  const byLevel = levelFilter === 'ALL' ? list : list.filter((g) => g.level === levelFilter);
+  const filtered = filter === 'all' ? byLevel : byLevel.filter((g) => g.status === filter);
+  const masteredCount = byLevel.filter((g) => g.status === 'mastered').length;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
-      <div className="clay-card p-6 sm:p-7 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-extrabold text-cocoa-900 flex items-center gap-2.5">
-            <span className="w-10 h-10 rounded-[16px] bg-peach-100 text-peach-600 border border-peach-200/70 shadow-clay-sm flex items-center justify-center">
-              <GraduationCap className="w-5 h-5" />
-            </span>
-            <span>Ngữ pháp HSK 2 (3.0)</span>
-          </h1>
-          <p className="text-sm text-cocoa-600 mt-1.5">
-            Tổng hợp {list.length} cấu trúc ngữ pháp cốt lõi HSK 2 (3.0) • Đã nắm vững:{' '}
-            <strong className="text-sage-700">
-              {masteredCount}/{list.length}
-            </strong>
-          </p>
+      <div className="clay-card p-6 sm:p-7 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-extrabold text-cocoa-900 flex items-center gap-2.5">
+              <span className="w-10 h-10 rounded-[16px] bg-peach-100 text-peach-600 border border-peach-200/70 shadow-clay-sm flex items-center justify-center">
+                <GraduationCap className="w-5 h-5" />
+              </span>
+              <span>Ngữ pháp Tiếng Trung HSK 1 → 3 (3.0)</span>
+            </h1>
+            <p className="text-sm text-cocoa-600 mt-1.5">
+              Tổng hợp {byLevel.length} cấu trúc ngữ pháp • Đã nắm vững:{' '}
+              <strong className="text-sage-700">
+                {masteredCount}/{byLevel.length}
+              </strong>
+            </p>
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            {(['ALL', 'HSK1', 'HSK2', 'HSK3'] as const).map((lv) => (
+              <button
+                key={lv}
+                onClick={() => setLevelFilter(lv)}
+                className={`px-3.5 py-2 rounded-[16px] text-xs font-extrabold transition ${
+                  levelFilter === lv ? 'clay-btn-peach' : 'clay-btn-cream'
+                }`}
+              >
+                {lv === 'ALL' ? 'Tất cả cấp' : lv}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap pt-3 border-t border-cocoa-400/15">
           {[
-            { key: 'all', label: 'Tất cả' },
+            { key: 'all', label: 'Tất cả trạng thái' },
             { key: 'new', label: 'Chưa học' },
             { key: 'learning', label: 'Đang luyện' },
             { key: 'mastered', label: 'Thành thạo' },
@@ -103,8 +123,8 @@ export default function GrammarPage() {
             <button
               key={f.key}
               onClick={() => setFilter(f.key as any)}
-              className={`px-3.5 py-2 rounded-[16px] text-xs font-bold transition ${
-                filter === f.key ? 'clay-btn-peach' : 'clay-btn-cream'
+              className={`px-3 py-1.5 rounded-[14px] text-xs font-bold transition ${
+                filter === f.key ? 'clay-btn-sage' : 'bg-linen-200/80 text-cocoa-600 hover:bg-linen-300/80'
               }`}
             >
               {f.label}
@@ -125,9 +145,14 @@ export default function GrammarPage() {
               <div key={g.id} className="clay-card p-6 sm:p-7 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-peach-100 text-peach-700 border border-peach-200/60">
-                      Unit {g.unitNumber} • #{g.orderIndex}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-sage-100 text-sage-700 border border-sage-200/70">
+                        {g.level}
+                      </span>
+                      <span className="text-xs font-extrabold px-3 py-1 rounded-full bg-peach-100 text-peach-700 border border-peach-200/60">
+                        Unit {g.unitNumber} • #{g.orderIndex}
+                      </span>
+                    </div>
                     <h2 className="text-lg font-extrabold text-cocoa-900 mt-2">{g.title}</h2>
                   </div>
 
@@ -180,7 +205,6 @@ export default function GrammarPage() {
                   ))}
                 </div>
 
-                {/* Thực hành nhanh tại chỗ */}
                 <div className="pt-4 border-t border-cocoa-400/15 space-y-3">
                   <div className="flex flex-col sm:flex-row gap-2.5">
                     <input

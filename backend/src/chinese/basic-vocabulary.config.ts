@@ -21,7 +21,7 @@ export const BASIC_CHINESE_WORDS: string[] = [
   '在',
   '想',
   '要',
-  'สามารถ',
+  '能',
   '可以',
   '会',
   '去',

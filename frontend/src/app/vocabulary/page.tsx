@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { fetchApi } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
 import {
   Search,
   Plus,
@@ -19,11 +20,13 @@ import { speakChinese } from '@/lib/speech';
 
 interface Vocabulary {
   id: string;
+  ownerId?: string | null;
   word: string;
   meaning: string;
   partOfSpeech: string;
   pinyin: string | null;
   level: string | null;
+  topic?: string;
   createdAt: string;
 }
 
@@ -43,6 +46,7 @@ const PART_OF_SPEECH_OPTIONS = [
 ];
 
 export default function VocabularyPage() {
+  const { user } = useAuth();
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -689,25 +693,36 @@ export default function VocabularyPage() {
                       <td className="px-6 py-4 font-bold text-cocoa-800">{vocab.meaning}</td>
                       <td className="px-6 py-4 text-cocoa-500 font-semibold">{vocab.pinyin || '-'}</td>
                       <td className="px-6 py-4">
-                        <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-sage-100/80 text-sage-700 border border-sage-200/70">
-                          {vocab.level || 'HSK1'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-sage-100/80 text-sage-700 border border-sage-200/70">
+                            {vocab.level || 'HSK1'}
+                          </span>
+                          {vocab.ownerId ? (
+                            <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-honey-100 text-honey-700 border border-honey-200/70">
+                              Cá nhân
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => startEdit(vocab)}
-                            className="p-2 text-cocoa-400 hover:text-peach-600 hover:bg-peach-100/70 rounded-full transition"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(vocab.id, vocab.word)}
-                            className="p-2 text-cocoa-400 hover:text-berry-700 hover:bg-berry-100/80 rounded-full transition"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                        {(vocab.ownerId === user?.id || user?.role === 'ADMIN') ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => startEdit(vocab)}
+                              className="p-2 text-cocoa-400 hover:text-peach-600 hover:bg-peach-100/70 rounded-full transition"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(vocab.id, vocab.word)}
+                              className="p-2 text-cocoa-400 hover:text-berry-700 hover:bg-berry-100/80 rounded-full transition"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-cocoa-400">Kho chuẩn</span>
+                        )}
                       </td>
                     </tr>
                   );

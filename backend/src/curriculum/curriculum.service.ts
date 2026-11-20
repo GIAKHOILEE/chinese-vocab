@@ -2,19 +2,25 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { GeminiService } from '../ai/gemini.service';
 import { PinyinService } from '../chinese/pinyin.service';
-import { HSK2_VOCAB_DATA } from './data/hsk2-vocab.data';
+import { HSK_VOCAB_DATA } from './data/hsk-curriculum.data';
+import { HSK1_GRAMMAR_DATA } from './data/hsk1-grammar.data';
 import { HSK2_GRAMMAR_DATA } from './data/hsk2-grammar.data';
+import { HSK3_GRAMMAR_DATA } from './data/hsk3-grammar.data';
+
+const HSK_LEVELS = ['HSK1', 'HSK2', 'HSK3'] as const;
+type HskLevel = (typeof HSK_LEVELS)[number];
 
 @Injectable()
 export class CurriculumService {
   private readonly wordTopicMap: Map<string, string>;
+  private seedingPromise: Promise<void> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly geminiService: GeminiService,
     private readonly pinyinService: PinyinService,
   ) {
-    this.wordTopicMap = new Map(HSK2_VOCAB_DATA.map((item) => [item.word.trim(), item.topic]));
+    this.wordTopicMap = new Map(HSK_VOCAB_DATA.map((item) => [item.word.trim(), item.topic]));
   }
 
   private parseJsonSafe<T>(raw: string): T {
@@ -26,17 +32,162 @@ export class CurriculumService {
     return JSON.parse(cleaned) as T;
   }
 
-  async getOrCreateProfile() {
-    let profile = await this.prisma.studyProfile.findUnique({ where: { id: 'default' } });
+  private normalizeLevel(level?: string): HskLevel {
+    const upper = (level || '').trim().toUpperCase();
+    return (HSK_LEVELS as readonly string[]).includes(upper) ? (upper as HskLevel) : 'HSK1';
+  }
+
+  async ensureSeeded(): Promise<void> {
+    if (this.seedingPromise) return this.seedingPromise;
+
+    this.seedingPromise = (async () => {
+      try {
+        const [vocabCount, grammarCount] = await Promise.all([
+          this.prisma.vocabulary.count({ where: { ownerId: null } }),
+          this.prisma.grammarPoint.count(),
+        ]);
+        const expectedGrammar =
+          HSK1_GRAMMAR_DATA.length + HSK2_GRAMMAR_DATA.length + HSK3_GRAMMAR_DATA.length;
+
+        if (vocabCount < HSK_VOCAB_DATA.length || grammarCount < expectedGrammar) {
+          await this.syncCurriculum();
+        }
+      } finally {
+        this.seedingPromise = null;
+      }
+    })();
+
+    return this.seedingPromise;
+  }
+
+  private async syncCurriculum() {
+    // 1. Lấy tất cả từ GLOBAL hiện có để tránh trùng (theo word hoặc word+pos)
+    const existingGlobal = await this.prisma.vocabulary.findMany({
+      where: { scopeKey: 'GLOBAL' },
+      select: { id: true, word: true, partOfSpeech: true, topic: true, level: true },
+    });
+
+    const existingWordsOnly = new Set(existingGlobal.map((v) => v.word.trim()));
+    const existingKeys = new Set(
+      existingGlobal.map((v) => `${v.word.trim()}|||${v.partOfSpeech || ''}`),
+    );
+
+    // Cập nhật topic cho các từ cũ nếu chưa có topic
+    const topicUpdates = existingGlobal.filter(
+      (v) => (!v.topic || v.topic === '') && this.wordTopicMap.has(v.word.trim()),
+    );
+    for (const row of topicUpdates) {
+      const topic = this.wordTopicMap.get(row.word.trim());
+      if (topic) {
+        await this.prisma.vocabulary.update({
+          where: { id: row.id },
+          data: { topic },
+        });
+      }
+    }
+
+    // 2. Chèn hàng loạt các từ HSK 1, 2, 3 (3.0) còn thiếu
+    const toInsert: Array<{
+      ownerId: null;
+      scopeKey: string;
+      word: string;
+      meaning: string;
+      pinyin: string;
+      partOfSpeech: string;
+      level: string;
+      topic: string;
+    }> = [];
+
+    for (const item of HSK_VOCAB_DATA) {
+      const w = item.word.trim();
+      const pos = item.partOfSpeech?.trim() || '';
+      const key = `${w}|||${pos}`;
+      // Tránh tạo bản sao nếu từ đã tồn tại ở kho GLOBAL (kể cả khi bản cũ chưa có POS)
+      if (existingKeys.has(key) || existingWordsOnly.has(w)) continue;
+
+      existingKeys.add(key);
+      existingWordsOnly.add(w);
+
+      toInsert.push({
+        ownerId: null,
+        scopeKey: 'GLOBAL',
+        word: w,
+        meaning: item.meaning.trim(),
+        pinyin: item.pinyin?.trim() || this.pinyinService.generatePinyin(w),
+        partOfSpeech: pos,
+        level: item.level,
+        topic: item.topic || 'Từ vựng cốt lõi',
+      });
+    }
+
+    let addedWords = 0;
+    const CHUNK = 500;
+    for (let i = 0; i < toInsert.length; i += CHUNK) {
+      const res = await this.prisma.vocabulary.createMany({
+        data: toInsert.slice(i, i + CHUNK),
+        skipDuplicates: true,
+      });
+      addedWords += res.count;
+    }
+
+    // 3. Đồng bộ ngữ pháp HSK 1, HSK 2, HSK 3 (3.0)
+    const allGrammar = [
+      ...HSK1_GRAMMAR_DATA.map((g) => ({ ...g, level: 'HSK1' })),
+      ...HSK2_GRAMMAR_DATA.map((g) => ({ ...g, level: 'HSK2' })),
+      ...HSK3_GRAMMAR_DATA.map((g) => ({ ...g, level: 'HSK3' })),
+    ];
+
+    const existingGrammarTitles = new Set(
+      (await this.prisma.grammarPoint.findMany({ select: { title: true } })).map((g) => g.title),
+    );
+
+    let addedGrammar = 0;
+    for (const g of allGrammar) {
+      if (existingGrammarTitles.has(g.title)) continue;
+      await this.prisma.grammarPoint.create({
+        data: {
+          level: g.level,
+          unitNumber: g.unitNumber,
+          orderIndex: g.orderIndex,
+          title: g.title,
+          pattern: g.pattern,
+          explanation: g.explanation,
+          commonMistakes: g.commonMistakes,
+          examples: g.examples,
+        },
+      });
+      existingGrammarTitles.add(g.title);
+      addedGrammar++;
+    }
+
+    const [hsk1Total, hsk2Total, hsk3Total] = await Promise.all([
+      this.prisma.vocabulary.count({ where: { scopeKey: 'GLOBAL', level: 'HSK1' } }),
+      this.prisma.vocabulary.count({ where: { scopeKey: 'GLOBAL', level: 'HSK2' } }),
+      this.prisma.vocabulary.count({ where: { scopeKey: 'GLOBAL', level: 'HSK3' } }),
+    ]);
+
+    return {
+      addedWords,
+      addedGrammar,
+      hsk1Total,
+      hsk2Total,
+      hsk3Total,
+      message: `Đã đồng bộ +${addedWords} từ HSK 3.0 (HSK1: ${hsk1Total}, HSK2: ${hsk2Total}, HSK3: ${hsk3Total}) và +${addedGrammar} điểm ngữ pháp.`,
+    };
+  }
+
+  async getOrCreateProfile(userId: string) {
+    let profile = await this.prisma.studyProfile.findUnique({ where: { userId } });
     if (!profile) {
       profile = await this.prisma.studyProfile.create({
         data: {
-          id: 'default',
+          userId,
+          currentLevel: 'HSK1',
           dailyMinutesTarget: 90,
           newWordsPerDay: 15,
           reviewWordsPerDay: 25,
           grammarPerDay: 1,
-          preferredModel: 'gemini-2.5-flash',
+          preferredModel: 'gemini-3-flash-preview',
           currentDayNumber: 1,
         },
       });
@@ -44,68 +195,105 @@ export class CurriculumService {
     return profile;
   }
 
-  async updateProfile(data: {
-    dailyMinutesTarget?: number;
-    newWordsPerDay?: number;
-    reviewWordsPerDay?: number;
-    grammarPerDay?: number;
-    preferredModel?: string;
-  }) {
-    await this.getOrCreateProfile();
+  async updateProfile(
+    userId: string,
+    data: {
+      currentLevel?: string;
+      dailyMinutesTarget?: number;
+      newWordsPerDay?: number;
+      reviewWordsPerDay?: number;
+      grammarPerDay?: number;
+      preferredModel?: string;
+    },
+  ) {
+    await this.getOrCreateProfile(userId);
+    const cleanData: any = { ...data };
+    if (data.currentLevel) {
+      cleanData.currentLevel = this.normalizeLevel(data.currentLevel);
+    }
     return this.prisma.studyProfile.update({
-      where: { id: 'default' },
-      data,
+      where: { userId },
+      data: cleanData,
     });
   }
 
-  async getDashboardSummary() {
-    const profile = await this.getOrCreateProfile();
+  async getDashboardSummary(userId: string) {
+    await this.ensureSeeded();
+    const profile = await this.getOrCreateProfile(userId);
     const now = new Date();
 
-    const [hsk1Count, hsk2Count, progressGroups, dueReviewCount, grammarTotal, grammarMastered, recentLogs] =
-      await Promise.all([
-        this.prisma.vocabulary.count({ where: { level: 'HSK1' } }),
-        this.prisma.vocabulary.count({ where: { level: 'HSK2' } }),
-        this.prisma.vocabProgress.groupBy({
-          by: ['status'],
-          where: { vocabulary: { level: 'HSK2' } },
-          _count: true,
-        }),
-        this.prisma.vocabProgress.count({
-          where: {
-            status: { not: 'new' },
-            nextReviewAt: { lte: now },
-          },
-        }),
-        this.prisma.grammarPoint.count(),
-        this.prisma.grammarPoint.count({ where: { status: 'mastered' } }),
-        this.prisma.studyLog.findMany({
-          orderBy: { createdAt: 'desc' },
-          take: 7,
-        }),
-      ]);
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
 
-    const hsk2Breakdown: Record<string, number> = {
-      new: 0,
-      learning: 0,
-      review: 0,
-      mastered: 0,
+    const [
+      hsk1Count,
+      hsk2Count,
+      hsk3Count,
+      progressByLevelAndStatus,
+      dueReviewCount,
+      grammarTotal,
+      grammarMastered,
+      recentLogs,
+    ] = await Promise.all([
+      this.prisma.vocabulary.count({ where: { ...visibleFilter, level: 'HSK1' } }),
+      this.prisma.vocabulary.count({ where: { ...visibleFilter, level: 'HSK2' } }),
+      this.prisma.vocabulary.count({ where: { ...visibleFilter, level: 'HSK3' } }),
+      this.prisma.vocabProgress.findMany({
+        where: { userId, vocabulary: { level: { in: ['HSK1', 'HSK2', 'HSK3'] } } },
+        select: { status: true, vocabulary: { select: { level: true } } },
+      }),
+      this.prisma.vocabProgress.count({
+        where: {
+          userId,
+          status: { not: 'new' },
+          nextReviewAt: { lte: now },
+        },
+      }),
+      this.prisma.grammarPoint.count(),
+      this.prisma.grammarProgress.count({ where: { userId, status: 'mastered' } }),
+      this.prisma.studyLog.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'desc' },
+        take: 7,
+      }),
+    ]);
+
+    const levelTotals: Record<HskLevel, number> = {
+      HSK1: hsk1Count,
+      HSK2: hsk2Count,
+      HSK3: hsk3Count,
     };
-    let trackedHsk2 = 0;
-    for (const g of progressGroups) {
-      hsk2Breakdown[g.status] = g._count;
-      trackedHsk2 += g._count;
+
+    const levelBreakdowns: Record<HskLevel, Record<string, number>> = {
+      HSK1: { new: 0, learning: 0, review: 0, mastered: 0 },
+      HSK2: { new: 0, learning: 0, review: 0, mastered: 0 },
+      HSK3: { new: 0, learning: 0, review: 0, mastered: 0 },
+    };
+
+    const trackedPerLevel: Record<HskLevel, number> = { HSK1: 0, HSK2: 0, HSK3: 0 };
+    for (const row of progressByLevelAndStatus) {
+      const lv = row.vocabulary.level as HskLevel;
+      if (!levelBreakdowns[lv]) continue;
+      const st = row.status || 'new';
+      levelBreakdowns[lv][st] = (levelBreakdowns[lv][st] || 0) + 1;
+      trackedPerLevel[lv]++;
     }
-    hsk2Breakdown.new += Math.max(0, hsk2Count - trackedHsk2);
+
+    for (const lv of HSK_LEVELS) {
+      levelBreakdowns[lv].new += Math.max(0, levelTotals[lv] - trackedPerLevel[lv]);
+    }
 
     return {
       profile,
       stats: {
         hsk1Count,
         hsk2Count,
+        hsk3Count,
+        hsk1Target: 500,
         hsk2Target: 772,
-        builtInBankCount: HSK2_VOCAB_DATA.length,
-        hsk2Breakdown,
+        hsk3Target: 973,
+        builtInBankCount: HSK_VOCAB_DATA.length,
+        levelBreakdowns,
+        hsk2Breakdown: levelBreakdowns.HSK2,
         dueReviewCount,
         grammarTotal,
         grammarMastered,
@@ -114,212 +302,102 @@ export class CurriculumService {
     };
   }
 
-  async syncHsk2Curriculum() {
-    // 1. Lấy toàn bộ từ đã có trong DB để tránh trùng lặp
-    const existingVocabs = await this.prisma.vocabulary.findMany({
-      select: { id: true, word: true, progress: { select: { id: true } } },
-    });
-    const existingWordSet = new Set(existingVocabs.map((v) => v.word.trim()));
-
-    // Khởi tạo VocabProgress cho các từ đã có mà chưa có progress
-    const missingProgressIds = existingVocabs.filter((v) => !v.progress).map((v) => v.id);
-    if (missingProgressIds.length > 0) {
-      await this.prisma.vocabProgress.createMany({
-        data: missingProgressIds.map((vocabularyId) => ({
-          vocabularyId,
-          status: 'new',
-        })),
-        skipDuplicates: true,
-      });
-    }
-
-    // 2. Thêm các từ HSK 2 (3.0) còn thiếu từ bộ chuẩn
-    let addedWords = 0;
-    for (const item of HSK2_VOCAB_DATA) {
-      if (existingWordSet.has(item.word)) continue;
-      try {
-        const pinyin = this.pinyinService.generatePinyin(item.word);
-        const created = await this.prisma.vocabulary.create({
-          data: {
-            word: item.word,
-            meaning: item.meaning,
-            pinyin,
-            partOfSpeech: item.partOfSpeech,
-            level: 'HSK2',
-          },
-        });
-        await this.prisma.vocabProgress.create({
-          data: {
-            vocabularyId: created.id,
-            status: 'new',
-          },
-        });
-        existingWordSet.add(item.word);
-        addedWords++;
-      } catch {
-        // Bỏ qua nếu trùng unique key
-      }
-    }
-
-    // 3. Đồng bộ 30 điểm ngữ pháp HSK 2 (3.0)
-    let addedGrammar = 0;
-    for (const g of HSK2_GRAMMAR_DATA) {
-      const existing = await this.prisma.grammarPoint.findUnique({ where: { title: g.title } });
-      if (!existing) {
-        await this.prisma.grammarPoint.create({
-          data: {
-            level: 'HSK2',
-            unitNumber: g.unitNumber,
-            orderIndex: g.orderIndex,
-            title: g.title,
-            pattern: g.pattern,
-            explanation: g.explanation,
-            commonMistakes: g.commonMistakes,
-            examples: g.examples,
-            status: 'new',
-          },
-        });
-        addedGrammar++;
-      }
-    }
-
-    const totalHsk2 = await this.prisma.vocabulary.count({ where: { level: 'HSK2' } });
-    return {
-      addedWords,
-      addedGrammar,
-      totalHsk2,
-      message: `Đã đồng bộ +${addedWords} từ HSK 2 (3.0) mới và +${addedGrammar} điểm ngữ pháp.`,
-    };
-  }
-
-  async aiExpandHsk2Words(topic?: string, count = 25, model?: string) {
-    const existing = await this.prisma.vocabulary.findMany({
-      select: { word: true },
-    });
-    const existingSet = new Set(existing.map((e) => e.word.trim()));
-    const sampleExisting = Array.from(existingSet).slice(-120).join(', ');
-
-    const prompt = `Bạn là chuyên gia biên soạn giáo trình HSK 3.0 (Bản mới).
-Hãy cung cấp ${count} từ vựng chuẩn thuộc cấp độ **HSK 2 (phiên bản 3.0)** ${topic ? `về chủ đề "${topic}"` : 'đa dạng chủ đề thường gặp'} mà CHƯA nằm trong danh sách sau:
-[${sampleExisting}]
-
-Yêu cầu:
-- Chỉ chọn từ HSK 2 (3.0) thực sự thông dụng, hữu ích cho giao tiếp & viết câu.
-- Nghĩa tiếng Việt ngắn gọn, chính xác, tự nhiên.
-- Từ loại tiếng Việt (Danh từ, Động từ, Tính từ, Phó từ, Lượng từ, Liên từ, Giới từ).
-- Trả về STRICT JSON:
-{
-  "words": [
-    { "word": "汉字", "meaning": "nghĩa tiếng Việt", "partOfSpeech": "Động từ" }
-  ]
-}`;
-
-    const raw = await this.geminiService.generateText(prompt, {
-      model,
-      systemInstruction: 'You are an HSK 3.0 Level 2 Chinese curriculum expert. Output valid JSON only.',
-      temperature: 0.4,
-    });
-
-    const parsed = this.parseJsonSafe<{ words: Array<{ word: string; meaning: string; partOfSpeech: string }> }>(raw);
-    const candidates = parsed?.words || [];
-
-    let addedCount = 0;
-    const addedWords: Array<{ word: string; meaning: string; pinyin: string }> = [];
-
-    for (const item of candidates) {
-      const w = item.word?.trim();
-      if (!w || existingSet.has(w)) continue;
-      try {
-        const pinyin = this.pinyinService.generatePinyin(w);
-        const created = await this.prisma.vocabulary.create({
-          data: {
-            word: w,
-            meaning: item.meaning?.trim() || '',
-            pinyin,
-            partOfSpeech: item.partOfSpeech?.trim() || '',
-            level: 'HSK2',
-          },
-        });
-        await this.prisma.vocabProgress.create({
-          data: { vocabularyId: created.id, status: 'new' },
-        });
-        existingSet.add(w);
-        addedCount++;
-        addedWords.push({ word: w, meaning: created.meaning, pinyin });
-      } catch {
-        // Ignore duplicate
-      }
-    }
-
-    return {
-      addedCount,
-      addedWords,
-    };
-  }
-
-  async getTodayPlan(requestedTopic?: string) {
-    const profile = await this.getOrCreateProfile();
+  async getTodayPlan(userId: string, requestedTopic?: string, requestedLevel?: string) {
+    await this.ensureSeeded();
+    const profile = await this.getOrCreateProfile(userId);
+    const activeLevel = requestedLevel
+      ? this.normalizeLevel(requestedLevel)
+      : this.normalizeLevel(profile.currentLevel);
     const now = new Date();
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
 
-    // Đảm bảo các từ chưa có VocabProgress đều được khởi tạo
-    const vocabsWithoutProgress = await this.prisma.vocabulary.findMany({
-      where: { progress: null },
-      select: { id: true },
-    });
-    if (vocabsWithoutProgress.length > 0) {
-      await this.prisma.vocabProgress.createMany({
-        data: vocabsWithoutProgress.map((v) => ({ vocabularyId: v.id, status: 'new' })),
-        skipDuplicates: true,
-      });
-    }
-
-    // 1. Chặng 1: Từ cũ cần ôn (ưu tiên từ đến hạn SRS & từ hay sai thuộc cả HSK1 và HSK2)
-    let reviewList = await this.prisma.vocabulary.findMany({
+    // 1. Chặng 1: Từ cũ đến hạn SRS của riêng user này
+    const dueProgresses = await this.prisma.vocabProgress.findMany({
       where: {
-        progress: {
-          status: { not: 'new' },
-          nextReviewAt: { lte: now },
-        },
+        userId,
+        status: { not: 'new' },
+        nextReviewAt: { lte: now },
+        vocabulary: visibleFilter,
       },
-      include: { progress: true },
-      orderBy: [
-        { progress: { wrongCount: 'desc' } },
-        { progress: { nextReviewAt: 'asc' } },
-      ],
+      include: { vocabulary: true },
+      orderBy: [{ wrongCount: 'desc' }, { nextReviewAt: 'asc' }],
       take: profile.reviewWordsPerDay,
     });
 
-    // Nếu chưa đủ số từ ôn, lấy thêm các từ HSK1 cũ (để ôn xen kẽ từ nền tảng) hoặc từ lâu chưa ôn
+    let reviewList: Array<any> = dueProgresses.map(({ vocabulary, ...prog }) => ({
+      ...vocabulary,
+      progress: prog,
+    }));
+
+    // Nếu chưa đủ, lấy thêm từ user đã bắt đầu học (hoặc từ cấp thấp hơn làm nền tảng nếu đang ở HSK2/HSK3)
     if (reviewList.length < profile.reviewWordsPerDay) {
-      const existingIds = reviewList.map((r) => r.id);
-      const extraOld = await this.prisma.vocabulary.findMany({
+      const pickedIds = reviewList.map((r) => r.id);
+      const extraStarted = await this.prisma.vocabProgress.findMany({
         where: {
-          id: { notIn: existingIds },
-          level: 'HSK1',
+          userId,
+          vocabularyId: { notIn: pickedIds },
+          status: { not: 'new' },
+          vocabulary: visibleFilter,
         },
-        include: { progress: true },
-        orderBy: [
-          { progress: { lastReviewedAt: 'asc' } },
-          { createdAt: 'asc' },
-        ],
+        include: { vocabulary: true },
+        orderBy: [{ lastReviewedAt: 'asc' }],
         take: profile.reviewWordsPerDay - reviewList.length,
       });
-      reviewList = [...reviewList, ...extraOld];
+
+      reviewList = [
+        ...reviewList,
+        ...extraStarted.map(({ vocabulary, ...prog }) => ({ ...vocabulary, progress: prog })),
+      ];
     }
 
-    // 2. Chặng 2: Gom từ mới HSK 2 (3.0) theo chủ đề để dễ tạo hội thoại & nhớ sâu
-    const allNewHsk2 = await this.prisma.vocabulary.findMany({
+    if (reviewList.length < profile.reviewWordsPerDay && activeLevel !== 'HSK1') {
+      const lowerLevels = activeLevel === 'HSK2' ? ['HSK1'] : ['HSK1', 'HSK2'];
+      const pickedIds = reviewList.map((r) => r.id);
+      const extraFoundation = await this.prisma.vocabulary.findMany({
+        where: {
+          ...visibleFilter,
+          id: { notIn: pickedIds },
+          level: { in: lowerLevels },
+        },
+        include: {
+          progresses: { where: { userId } },
+        },
+        orderBy: { createdAt: 'asc' },
+        take: profile.reviewWordsPerDay - reviewList.length,
+      });
+
+      reviewList = [
+        ...reviewList,
+        ...extraFoundation.map((v) => ({
+          ...v,
+          progress: v.progresses[0] || null,
+        })),
+      ];
+    }
+
+    // 2. Chặng 2: Từ mới ở cấp độ activeLevel mà user này chưa học (status === 'new' hoặc chưa có VocabProgress)
+    const allAtLevel = await this.prisma.vocabulary.findMany({
       where: {
-        level: 'HSK2',
-        progress: { status: 'new' },
+        ...visibleFilter,
+        level: activeLevel,
+        NOT: {
+          progresses: {
+            some: {
+              userId,
+              status: { not: 'new' },
+            },
+          },
+        },
       },
-      include: { progress: true },
+      include: {
+        progresses: { where: { userId } },
+      },
       orderBy: { createdAt: 'asc' },
     });
 
-    const topicGroups = new Map<string, typeof allNewHsk2>();
-    for (const w of allNewHsk2) {
-      const topic = this.wordTopicMap.get(w.word.trim()) || 'Từ vựng cá nhân & Mở rộng';
+    const topicGroups = new Map<string, typeof allAtLevel>();
+    for (const w of allAtLevel) {
+      const topic = w.topic?.trim() || this.wordTopicMap.get(w.word.trim()) || 'Từ vựng mở rộng';
       const arr = topicGroups.get(topic) || [];
       arr.push(w);
       topicGroups.set(topic, arr);
@@ -330,31 +408,43 @@ Yêu cầu:
       remainingCount: words.length,
     }));
 
-    // Chọn chủ đề: ưu tiên chủ đề người dùng chọn, hoặc chủ đề đầu tiên có từ
-    let selectedTopic = requestedTopic && topicGroups.has(requestedTopic)
-      ? requestedTopic
-      : availableTopics[0]?.topic || 'Giao tiếp & Cảm xúc';
+    const selectedTopic =
+      requestedTopic && topicGroups.has(requestedTopic)
+        ? requestedTopic
+        : availableTopics[0]?.topic || 'Giao tiếp & Cảm xúc';
 
     let selectedNewWords = (topicGroups.get(selectedTopic) || []).slice(0, profile.newWordsPerDay);
 
-    // Nếu chủ đề hiện tại còn ít hơn số từ mục tiêu, gom thêm từ chủ đề kế tiếp để đủ buổi học
-    if (selectedNewWords.length < profile.newWordsPerDay && allNewHsk2.length > selectedNewWords.length) {
+    if (selectedNewWords.length < profile.newWordsPerDay && allAtLevel.length > selectedNewWords.length) {
       const pickedIds = new Set(selectedNewWords.map((w) => w.id));
-      const extras = allNewHsk2.filter((w) => !pickedIds.has(w.id)).slice(0, profile.newWordsPerDay - selectedNewWords.length);
+      const extras = allAtLevel
+        .filter((w) => !pickedIds.has(w.id))
+        .slice(0, profile.newWordsPerDay - selectedNewWords.length);
       selectedNewWords = [...selectedNewWords, ...extras];
     }
 
-    const newHsk2WordsWithTopic = selectedNewWords.map((w) => ({
+    const newWordsWithTopic = selectedNewWords.map((w) => ({
       ...w,
-      topic: this.wordTopicMap.get(w.word.trim()) || 'Từ vựng cá nhân & Mở rộng',
+      progress: w.progresses[0] || null,
+      topic: w.topic?.trim() || this.wordTopicMap.get(w.word.trim()) || 'Từ vựng mở rộng',
     }));
 
-    // 3. Chặng 3: Ngữ pháp trọng tâm hôm nay
-    const grammarPoints = await this.prisma.grammarPoint.findMany({
-      where: { status: { not: 'mastered' } },
+    // 3. Chặng 3: Ngữ pháp theo activeLevel & tiến độ của riêng user này
+    const levelGrammar = await this.prisma.grammarPoint.findMany({
+      where: { level: activeLevel },
+      include: { progresses: { where: { userId } } },
       orderBy: [{ unitNumber: 'asc' }, { orderIndex: 'asc' }],
-      take: profile.grammarPerDay,
     });
+
+    const grammarPoints = levelGrammar
+      .map((g) => ({
+        ...g,
+        status: (g.progresses[0]?.status || 'new') as 'new' | 'learning' | 'mastered',
+        practiceCount: g.progresses[0]?.practiceCount || 0,
+        lastPracticedAt: g.progresses[0]?.lastPracticedAt || null,
+      }))
+      .filter((g) => g.status !== 'mastered')
+      .slice(0, profile.grammarPerDay);
 
     const totalMinutes = profile.dailyMinutesTarget;
     const schedule = {
@@ -366,30 +456,41 @@ Yêu cầu:
 
     return {
       profile,
+      activeLevel,
       schedule,
       currentTopic: selectedTopic,
       availableTopics,
       reviewWords: reviewList,
-      newWords: newHsk2WordsWithTopic,
+      newWords: newWordsWithTopic,
       grammarPoints,
     };
   }
 
-  async generateTopicDialogue(body: {
-    newWordIds: string[];
-    oldWordIds?: string[];
-    topic?: string;
-    model?: string;
-  }) {
-    const [newWords, passedOldWords, extraHsk1] = await Promise.all([
-      this.prisma.vocabulary.findMany({ where: { id: { in: body.newWordIds || [] } } }),
+  async generateTopicDialogue(
+    userId: string,
+    body: {
+      newWordIds: string[];
+      oldWordIds?: string[];
+      topic?: string;
+      level?: string;
+      model?: string;
+    },
+  ) {
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
+    const level = this.normalizeLevel(body.level);
+
+    const [newWords, passedOldWords, extraFoundation] = await Promise.all([
+      this.prisma.vocabulary.findMany({
+        where: { ...visibleFilter, id: { in: body.newWordIds || [] } },
+      }),
       body.oldWordIds?.length
-        ? this.prisma.vocabulary.findMany({ where: { id: { in: body.oldWordIds } } })
+        ? this.prisma.vocabulary.findMany({
+            where: { ...visibleFilter, id: { in: body.oldWordIds } },
+          })
         : Promise.resolve([]),
       this.prisma.vocabulary.findMany({
-        where: { level: 'HSK1' },
+        where: { ...visibleFilter, level: 'HSK1' },
         take: 35,
-        orderBy: { updatedAt: 'desc' },
       }),
     ]);
 
@@ -398,7 +499,7 @@ Yêu cầu:
     }
 
     const oldMap = new Map<string, { word: string; meaning: string }>();
-    for (const w of [...passedOldWords, ...extraHsk1]) {
+    for (const w of [...passedOldWords, ...extraFoundation]) {
       oldMap.set(w.word, { word: w.word, meaning: w.meaning });
     }
 
@@ -408,21 +509,21 @@ Yêu cầu:
       .map((w) => `${w.word} (${w.meaning})`)
       .join(', ');
 
-    const prompt = `Bạn là giáo viên tiếng Trung HSK 2 (3.0) xuất sắc cho người Việt.
+    const prompt = `Bạn là giáo viên tiếng Trung ${level} (chuẩn HSK 3.0) xuất sắc cho người Việt.
 Học viên đang học nhóm từ mới theo chủ đề **"${body.topic || 'Giao tiếp hàng ngày'}"**:
 - Từ mới hôm nay (CẦN ĐƯA VÀO TỐI ĐA): [${newListStr}]
 - Từ cũ đã học (TÁI SỬ DỤNG THOẢI MÁI & LẶP LẠI NHIỀU ĐỂ NHỚ SÂU): [${oldListStr}]
 
 Hãy tạo:
-1. Một đoạn hội thoại ngắn, tự nhiên, sinh động (6 đến 10 câu thoại giữa 2 người A và B) xoay quanh chủ đề này, lồng ghép khéo léo các từ mới hôm nay VÀ lặp lại nhiều lần các từ cũ đã học để học viên dễ nhớ, dễ vào đầu.
-2. 4 mẫu câu giao tiếp ngắn gọn (keySentences) kết hợp từ mới + từ cũ để học viên đọc to và ghi nhớ ngay.
+1. Một đoạn hội thoại ngắn, tự nhiên, sinh động (6 đến 10 câu thoại giữa 2 người A và B) xoay quanh chủ đề này, lồng ghép khéo léo các từ mới hôm nay VÀ lặp lại nhiều lần các từ cũ đã học.
+2. 4 mẫu câu giao tiếp ngắn gọn (keySentences) kết hợp từ mới + từ cũ.
 3. Giải thích ngắn gọn cách các từ mới hôm nay liên kết với nhau trong tình huống này.
 
 Trả về STRICT JSON:
 {
   "dialogueTitle": "Tên đoạn hội thoại tiếng Việt hấp dẫn",
   "context": "Mô tả bối cảnh 1-2 câu bằng tiếng Việt",
-  "topicConnectionNote": "Giải thích ngắn gọn cách nhóm từ mới này gắn với chủ đề để dễ nhớ cả cụm",
+  "topicConnectionNote": "Giải thích ngắn gọn cách nhóm từ mới này gắn với chủ đề",
   "dialogue": [
     {
       "speaker": "A",
@@ -442,7 +543,7 @@ Trả về STRICT JSON:
 
     const raw = await this.geminiService.generateText(prompt, {
       model: body.model,
-      systemInstruction: 'You are a Chinese HSK 2 conversation & vocabulary coach. Output valid JSON only.',
+      systemInstruction: `You are a Chinese ${level} conversation & vocabulary coach. Output valid JSON only.`,
       temperature: 0.45,
     });
 
@@ -478,18 +579,26 @@ Trả về STRICT JSON:
     };
   }
 
-  async submitSrsReview(vocabularyId: string, quality: 'again' | 'hard' | 'good' | 'easy') {
-    const vocab = await this.prisma.vocabulary.findUnique({
-      where: { id: vocabularyId },
-      include: { progress: true },
+  async submitSrsReview(
+    userId: string,
+    vocabularyId: string,
+    quality: 'again' | 'hard' | 'good' | 'easy',
+  ) {
+    const vocab = await this.prisma.vocabulary.findFirst({
+      where: {
+        id: vocabularyId,
+        OR: [{ ownerId: null }, { ownerId: userId }],
+      },
     });
     if (!vocab) {
       throw new NotFoundException('Không tìm thấy từ vựng.');
     }
 
-    const prev = vocab.progress || (await this.prisma.vocabProgress.create({
-      data: { vocabularyId, status: 'new' },
-    }));
+    const prev = await this.prisma.vocabProgress.upsert({
+      where: { userId_vocabularyId: { userId, vocabularyId } },
+      create: { userId, vocabularyId, status: 'new' },
+      update: {},
+    });
 
     let srsLevel = prev.srsLevel;
     let intervalDays = prev.intervalDays;
@@ -532,7 +641,7 @@ Trả về STRICT JSON:
     const nextReviewAt = new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000);
 
     return this.prisma.vocabProgress.update({
-      where: { vocabularyId },
+      where: { userId_vocabularyId: { userId, vocabularyId } },
       data: {
         status,
         srsLevel,
@@ -547,27 +656,34 @@ Trả về STRICT JSON:
     });
   }
 
-  async getWordDeepDive(vocabularyId: string, model?: string) {
-    const vocab = await this.prisma.vocabulary.findUnique({
-      where: { id: vocabularyId },
-      include: { progress: true },
+  async getWordDeepDive(userId: string, vocabularyId: string, model?: string) {
+    const vocab = await this.prisma.vocabulary.findFirst({
+      where: {
+        id: vocabularyId,
+        OR: [{ ownerId: null }, { ownerId: userId }],
+      },
     });
     if (!vocab) {
       throw new NotFoundException('Không tìm thấy từ vựng.');
     }
 
-    if (vocab.progress?.aiMnemonic && vocab.progress?.aiExamples) {
+    const userProgress = await this.prisma.vocabProgress.findUnique({
+      where: { userId_vocabularyId: { userId, vocabularyId } },
+    });
+
+    if (userProgress?.aiMnemonic && userProgress?.aiExamples) {
       return {
         cached: true,
         word: vocab.word,
         pinyin: vocab.pinyin,
         meaning: vocab.meaning,
-        deepDive: JSON.parse(vocab.progress.aiMnemonic),
-        examples: vocab.progress.aiExamples,
+        deepDive: JSON.parse(userProgress.aiMnemonic),
+        examples: userProgress.aiExamples,
       };
     }
 
-    const prompt = `Hãy phân tích chuyên sâu giúp người Việt học hiểu và nhớ sâu từ tiếng Trung HSK 2 sau:
+    const level = vocab.level || 'HSK1-3';
+    const prompt = `Hãy phân tích chuyên sâu giúp người Việt học hiểu và nhớ sâu từ tiếng Trung ${level} sau:
 - Từ: ${vocab.word}
 - Pinyin: ${vocab.pinyin || ''}
 - Nghĩa tiếng Việt: ${vocab.meaning}
@@ -580,9 +696,9 @@ Trả về STRICT JSON với cấu trúc:
   "collocations": [
     { "phrase": "cụm từ hay dùng", "pinyin": "pinyin", "meaning": "nghĩa tiếng Việt" }
   ],
-  "distinguish": "Phân biệt nhanh với từ đồng nghĩa/dễ nhầm trong HSK1-2 (nếu có, không thì ghi mẹo dùng ngữ cảnh)",
+  "distinguish": "Phân biệt nhanh với từ đồng nghĩa/dễ nhầm trong ${level}",
   "examples": [
-    { "chinese": "Câu ví dụ ngắn gọn, thực tế trình độ HSK1-2", "vietnamese": "Nghĩa tiếng Việt" }
+    { "chinese": "Câu ví dụ ngắn gọn, thực tế trình độ ${level}", "vietnamese": "Nghĩa tiếng Việt" }
   ]
 }`;
 
@@ -612,24 +728,20 @@ Trả về STRICT JSON với cấu trúc:
       distinguish: parsed.distinguish || '',
     };
 
-    if (!vocab.progress) {
-      await this.prisma.vocabProgress.create({
-        data: {
-          vocabularyId: vocab.id,
-          status: 'new',
-          aiMnemonic: JSON.stringify(deepDivePayload),
-          aiExamples: examplesWithPinyin,
-        },
-      });
-    } else {
-      await this.prisma.vocabProgress.update({
-        where: { vocabularyId: vocab.id },
-        data: {
-          aiMnemonic: JSON.stringify(deepDivePayload),
-          aiExamples: examplesWithPinyin,
-        },
-      });
-    }
+    await this.prisma.vocabProgress.upsert({
+      where: { userId_vocabularyId: { userId, vocabularyId: vocab.id } },
+      create: {
+        userId,
+        vocabularyId: vocab.id,
+        status: 'new',
+        aiMnemonic: JSON.stringify(deepDivePayload),
+        aiExamples: examplesWithPinyin,
+      },
+      update: {
+        aiMnemonic: JSON.stringify(deepDivePayload),
+        aiExamples: examplesWithPinyin,
+      },
+    });
 
     return {
       cached: false,
@@ -641,15 +753,22 @@ Trả về STRICT JSON với cấu trúc:
     };
   }
 
-  async generateMixedPractice(body: {
-    newWordIds: string[];
-    reviewWordIds: string[];
-    grammarIds: string[];
-    model?: string;
-  }) {
+  async generateMixedPractice(
+    userId: string,
+    body: {
+      newWordIds: string[];
+      reviewWordIds: string[];
+      grammarIds: string[];
+      level?: string;
+      model?: string;
+    },
+  ) {
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
+    const level = this.normalizeLevel(body.level);
+
     const [newWords, reviewWords, grammars] = await Promise.all([
-      this.prisma.vocabulary.findMany({ where: { id: { in: body.newWordIds || [] } } }),
-      this.prisma.vocabulary.findMany({ where: { id: { in: body.reviewWordIds || [] } } }),
+      this.prisma.vocabulary.findMany({ where: { ...visibleFilter, id: { in: body.newWordIds || [] } } }),
+      this.prisma.vocabulary.findMany({ where: { ...visibleFilter, id: { in: body.reviewWordIds || [] } } }),
       this.prisma.grammarPoint.findMany({ where: { id: { in: body.grammarIds || [] } } }),
     ]);
 
@@ -661,14 +780,14 @@ Trả về STRICT JSON với cấu trúc:
     const oldList = reviewWords.slice(0, 20).map((w) => `${w.word} (${w.meaning})`).join(', ');
     const grammarText = grammars.map((g) => `${g.title}: ${g.pattern}`).join(' | ');
 
-    const prompt = `Hãy tạo một bộ bài tập luyện viết kết hợp từ mới HSK 2, từ cũ đã học và ngữ pháp trọng tâm cho học viên người Việt:
-- Từ mới HSK 2 hôm nay: [${newList || 'Không có'}]
+    const prompt = `Hãy tạo một bộ bài tập luyện viết kết hợp từ mới ${level}, từ cũ đã học và ngữ pháp trọng tâm cho học viên người Việt:
+- Từ mới ${level} hôm nay: [${newList || 'Không có'}]
 - Từ cũ cần ôn xen kẽ: [${oldList || 'Không có'}]
-- Ngữ pháp trọng tâm hôm nay: [${grammarText || 'Câu giao tiếp HSK 2'}]
+- Ngữ pháp trọng tâm hôm nay: [${grammarText || `Câu giao tiếp ${level}`}]
 
 Yêu cầu tạo:
-1. 15 câu dịch Việt -> Trung: Mỗi câu PHẢI kết hợp khéo léo ít nhất 1-2 từ mới hôm nay + 1-2 từ cũ cần ôn + áp dụng ngữ pháp trọng tâm (nếu phù hợp). Câu đa dạng tình huống đời sống, đi từ ngắn dễ đến vừa phải.
-2. 3 đề bài đặt câu tự do (freePrompts): Cho sẵn 2-3 từ khóa (gồm cả từ mới + từ cũ) và yêu cầu đặt 1 câu hoàn chỉnh theo ngữ pháp hôm nay.
+1. 15 câu dịch Việt -> Trung: Mỗi câu PHẢI kết hợp khéo léo ít nhất 1-2 từ mới hôm nay + 1-2 từ cũ cần ôn + áp dụng ngữ pháp trọng tâm (nếu phù hợp).
+2. 3 đề bài đặt câu tự do (freePrompts): Cho sẵn 2-3 từ khóa và yêu cầu đặt 1 câu hoàn chỉnh.
 
 Trả về STRICT JSON:
 {
@@ -691,7 +810,7 @@ Trả về STRICT JSON:
 
     const raw = await this.geminiService.generateText(prompt, {
       model: body.model,
-      systemInstruction: 'You are a Chinese HSK 2 curriculum designer. Output valid JSON only.',
+      systemInstruction: `You are a Chinese ${level} curriculum designer. Output valid JSON only.`,
       temperature: 0.4,
     });
 
@@ -718,19 +837,24 @@ Trả về STRICT JSON:
     };
   }
 
-  async evaluateAttempt(body: {
-    promptVietnamese: string;
-    referenceChinese?: string;
-    targetWords?: string[];
-    grammarTitle?: string;
-    userChinese: string;
-    model?: string;
-  }) {
+  async evaluateAttempt(
+    userId: string,
+    body: {
+      promptVietnamese: string;
+      referenceChinese?: string;
+      targetWords?: string[];
+      grammarTitle?: string;
+      userChinese: string;
+      level?: string;
+      model?: string;
+    },
+  ) {
     if (!body.userChinese || !body.userChinese.trim()) {
       throw new BadRequestException('Vui lòng nhập câu tiếng Trung của bạn để AI đánh giá.');
     }
 
-    const prompt = `Bạn là gia sư tiếng Trung 1 kèm 1 tận tâm cho học viên người Việt đang học HSK 2 (bản 3.0).
+    const level = body.level || 'HSK 1-3 (chuẩn 3.0)';
+    const prompt = `Bạn là gia sư tiếng Trung 1 kèm 1 tận tâm cho học viên người Việt đang học ${level}.
 Hãy chấm điểm và nhận xét CÁ NHÂN HÓA câu tiếng Trung của học viên:
 - Đề bài / Yêu cầu: "${body.promptVietnamese}"
 ${body.referenceChinese ? `- Đáp án tham khảo: "${body.referenceChinese}"` : ''}
@@ -738,16 +862,15 @@ ${body.targetWords?.length ? `- Từ vựng mục tiêu cần dùng: [${body.tar
 ${body.grammarTitle ? `- Ngữ pháp mục tiêu: "${body.grammarTitle}"` : ''}
 - Câu học viên viết: "${body.userChinese.trim()}"
 
-Yêu cầu đánh giá chi tiết, khích lệ nhưng chỉ rõ lỗi sai để học viên nhớ sâu:
 Trả về STRICT JSON:
 {
   "score": 85,
   "isCorrect": true,
-  "correctedChinese": "Câu tiếng Trung chuẩn/tự nhiên nhất (giữ nguyên ý học viên nếu đã đúng)",
-  "grammarFeedback": "Nhận xét cụ thể về cấu trúc ngữ pháp, trật tự từ, trợ từ 了/过/着/得...",
-  "vocabFeedback": "Nhận xét cách dùng từ mới & từ cũ, có dùng đúng ngữ cảnh không",
-  "naturalnessFeedback": "Người Trung Quốc bản xứ có nói câu này tự nhiên không? Có cách nói nào hay hơn?",
-  "personalizedTip": "1 lời khuyên cá nhân hóa ngắn gọn để lần sau không mắc lỗi này nữa và nhớ sâu hơn",
+  "correctedChinese": "Câu tiếng Trung chuẩn/tự nhiên nhất",
+  "grammarFeedback": "Nhận xét cụ thể về cấu trúc ngữ pháp",
+  "vocabFeedback": "Nhận xét cách dùng từ mới & từ cũ",
+  "naturalnessFeedback": "Người bản xứ có nói câu này tự nhiên không?",
+  "personalizedTip": "1 lời khuyên cá nhân hóa ngắn gọn để nhớ sâu hơn",
   "weakWordsDetected": ["từ bị dùng sai hoặc quên nếu có"]
 }`;
 
@@ -768,15 +891,13 @@ Trả về STRICT JSON:
       weakWordsDetected?: string[];
     }>(raw);
 
-    // Lưu ghi chú lỗi sai vào VocabProgress nếu phát hiện từ yếu
     if (parsed.weakWordsDetected && parsed.weakWordsDetected.length > 0) {
       await this.prisma.vocabProgress.updateMany({
         where: {
+          userId,
           vocabulary: { word: { in: parsed.weakWordsDetected } },
         },
-        data: {
-          lastMistakeNote: parsed.personalizedTip,
-        },
+        data: { lastMistakeNote: parsed.personalizedTip },
       });
     }
 
@@ -786,22 +907,27 @@ Trả về STRICT JSON:
     };
   }
 
-  async evaluateBatch(body: {
-    items: Array<{
-      key: string;
-      promptVietnamese: string;
-      referenceChinese?: string;
-      targetWords?: string[];
-      grammarTitle?: string;
-      userChinese: string;
-    }>;
-    model?: string;
-  }) {
+  async evaluateBatch(
+    userId: string,
+    body: {
+      items: Array<{
+        key: string;
+        promptVietnamese: string;
+        referenceChinese?: string;
+        targetWords?: string[];
+        grammarTitle?: string;
+        userChinese: string;
+      }>;
+      level?: string;
+      model?: string;
+    },
+  ) {
     const validItems = (body.items || []).filter((i) => i.userChinese && i.userChinese.trim());
     if (validItems.length === 0) {
       throw new BadRequestException('Vui lòng viết ít nhất 1 câu tiếng Trung trước khi chấm bài.');
     }
 
+    const level = body.level || 'HSK 1-3 (chuẩn 3.0)';
     const itemsText = validItems
       .map(
         (item, idx) =>
@@ -809,14 +935,14 @@ Trả về STRICT JSON:
       )
       .join('\n');
 
-    const prompt = `Bạn là gia sư tiếng Trung 1 kèm 1 cho học viên người Việt học HSK 2 (3.0).
+    const prompt = `Bạn là gia sư tiếng Trung 1 kèm 1 cho học viên người Việt học ${level}.
 Hãy chấm điểm và nhận xét CÁ NHÂN HÓA TẤT CẢ ${validItems.length} câu sau trong một lần:
 ${itemsText}
 
 Trả về STRICT JSON:
 {
   "overallScore": 85,
-  "overallComment": "Nhận xét tổng quan 2-3 câu về điểm mạnh, lỗi hệ thống hay gặp trong bài làm này và lời khuyên cá nhân hóa",
+  "overallComment": "Nhận xét tổng quan 2-3 câu về điểm mạnh, lỗi hay gặp và lời khuyên cá nhân hóa",
   "results": [
     {
       "key": "đúng key ở trên",
@@ -865,7 +991,10 @@ Trả về STRICT JSON:
 
     if (allWeakWords.size > 0) {
       await this.prisma.vocabProgress.updateMany({
-        where: { vocabulary: { word: { in: Array.from(allWeakWords) } } },
+        where: {
+          userId,
+          vocabulary: { word: { in: Array.from(allWeakWords) } },
+        },
         data: { lastMistakeNote: parsed.overallComment },
       });
     }
@@ -877,22 +1006,25 @@ Trả về STRICT JSON:
     };
   }
 
-  async completeDailySession(body: {
-    minutesSpent: number;
-    newWordsLearned: number;
-    wordsReviewed: number;
-    grammarPracticed: number;
-    averageScore?: number;
-    weakWords?: string[];
-    model?: string;
-  }) {
-    const profile = await this.getOrCreateProfile();
+  async completeDailySession(
+    userId: string,
+    body: {
+      minutesSpent: number;
+      newWordsLearned: number;
+      wordsReviewed: number;
+      grammarPracticed: number;
+      averageScore?: number;
+      weakWords?: string[];
+      model?: string;
+    },
+  ) {
+    const profile = await this.getOrCreateProfile(userId);
     const today = new Date().toISOString().slice(0, 10);
 
-    const prompt = `Bạn là cố vấn học tập HSK 2 (3.0) cá nhân hóa. Học viên vừa hoàn thành Ngày ${profile.currentDayNumber} trong lộ trình 1-2 tiếng/ngày:
+    const prompt = `Bạn là cố vấn học tập ${profile.currentLevel} (chuẩn HSK 3.0) cá nhân hóa. Học viên vừa hoàn thành Ngày ${profile.currentDayNumber}:
 - Thời gian học: ${body.minutesSpent} phút (Mục tiêu: ${profile.dailyMinutesTarget} phút)
-- Từ mới HSK 2 đã học: ${body.newWordsLearned}
-- Từ cũ đã ôn (HSK 1 & 2): ${body.wordsReviewed}
+- Từ mới ${profile.currentLevel} đã học: ${body.newWordsLearned}
+- Từ cũ đã ôn: ${body.wordsReviewed}
 - Ngữ pháp đã luyện: ${body.grammarPracticed}
 - Điểm luyện viết trung bình: ${body.averageScore ?? 'Chưa chấm'}
 - Các từ còn yếu/hay nhầm: [${(body.weakWords || []).join(', ') || 'Không có'}]
@@ -902,7 +1034,7 @@ Hãy viết nhận xét tổng kết cá nhân hóa bằng tiếng Việt thật
   "headline": "Tiêu đề ngắn gọn nhận xét buổi học hôm nay",
   "strengths": "Điểm mạnh nổi bật hôm nay",
   "areasToImprove": "Điểm cần cải thiện cụ thể",
-  "tomorrowFocus": "Chiến lược học ngày mai (nên giữ nguyên tốc độ, tăng ôn từ yếu hay điều chỉnh gì)"
+  "tomorrowFocus": "Chiến lược học ngày mai"
 }`;
 
     let aiCoachingFeedback: any = null;
@@ -916,7 +1048,7 @@ Hãy viết nhận xét tổng kết cá nhân hóa bằng tiếng Việt thật
     } catch {
       aiCoachingFeedback = {
         headline: 'Hoàn thành xuất sắc buổi học hôm nay!',
-        strengths: `Bạn đã ôn ${body.wordsReviewed} từ cũ và học ${body.newWordsLearned} từ mới HSK 2.`,
+        strengths: `Bạn đã ôn ${body.wordsReviewed} từ cũ và học ${body.newWordsLearned} từ mới ${profile.currentLevel}.`,
         areasToImprove: 'Tiếp tục duy trì kết hợp đặt câu với các từ hay quên.',
         tomorrowFocus: 'Ngày mai ưu tiên ôn lại các từ vừa học hôm nay bằng SRS.',
       };
@@ -924,8 +1056,10 @@ Hãy viết nhận xét tổng kết cá nhân hóa bằng tiếng Việt thật
 
     const log = await this.prisma.studyLog.create({
       data: {
+        userId,
         date: today,
         dayNumber: profile.currentDayNumber,
+        level: profile.currentLevel,
         minutesSpent: body.minutesSpent,
         newWordsLearned: body.newWordsLearned,
         wordsReviewed: body.wordsReviewed,
@@ -936,33 +1070,70 @@ Hãy viết nhận xét tổng kết cá nhân hóa bằng tiếng Việt thật
     });
 
     await this.prisma.studyProfile.update({
-      where: { id: 'default' },
+      where: { userId },
       data: { currentDayNumber: profile.currentDayNumber + 1 },
     });
 
     return log;
   }
 
-  async getGrammarList() {
-    const count = await this.prisma.grammarPoint.count();
-    if (count === 0) {
-      await this.syncHsk2Curriculum();
-    }
-    return this.prisma.grammarPoint.findMany({
-      orderBy: [{ unitNumber: 'asc' }, { orderIndex: 'asc' }],
+  async getGrammarList(userId: string, level?: string) {
+    await this.ensureSeeded();
+    const where =
+      level && (HSK_LEVELS as readonly string[]).includes(level.toUpperCase())
+        ? { level: level.toUpperCase() }
+        : undefined;
+
+    const points = await this.prisma.grammarPoint.findMany({
+      where,
+      include: {
+        progresses: { where: { userId } },
+      },
+      orderBy: [{ level: 'asc' }, { unitNumber: 'asc' }, { orderIndex: 'asc' }],
     });
+
+    return points.map((g) => ({
+      id: g.id,
+      level: g.level,
+      unitNumber: g.unitNumber,
+      orderIndex: g.orderIndex,
+      title: g.title,
+      pattern: g.pattern,
+      explanation: g.explanation,
+      examples: g.examples,
+      commonMistakes: g.commonMistakes,
+      status: (g.progresses[0]?.status || 'new') as 'new' | 'learning' | 'mastered',
+      practiceCount: g.progresses[0]?.practiceCount || 0,
+      lastPracticedAt: g.progresses[0]?.lastPracticedAt || null,
+    }));
   }
 
-  async updateGrammarStatus(id: string, status: 'new' | 'learning' | 'mastered') {
+  async updateGrammarStatus(
+    userId: string,
+    id: string,
+    status: 'new' | 'learning' | 'mastered',
+  ) {
     const existing = await this.prisma.grammarPoint.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Không tìm thấy điểm ngữ pháp.');
     }
-    return this.prisma.grammarPoint.update({
-      where: { id },
-      data: {
+
+    const prev = await this.prisma.grammarProgress.findUnique({
+      where: { userId_grammarPointId: { userId, grammarPointId: id } },
+    });
+
+    return this.prisma.grammarProgress.upsert({
+      where: { userId_grammarPointId: { userId, grammarPointId: id } },
+      create: {
+        userId,
+        grammarPointId: id,
         status,
-        practiceCount: existing.practiceCount + 1,
+        practiceCount: 1,
+        lastPracticedAt: new Date(),
+      },
+      update: {
+        status,
+        practiceCount: (prev?.practiceCount || 0) + 1,
         lastPracticedAt: new Date(),
       },
     });

@@ -20,4 +20,8 @@ export class UpdateVocabularyDto {
   @IsOptional()
   @IsString()
   level?: string;
+
+  @IsOptional()
+  @IsString()
+  topic?: string;
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
 import {
   BookOpen,
   PenTool,
@@ -23,13 +24,18 @@ interface Stats {
 
 interface CurriculumSummary {
   profile: {
+    currentLevel: string;
     dailyMinutesTarget: number;
     currentDayNumber: number;
   };
   stats: {
     hsk1Count: number;
     hsk2Count: number;
+    hsk3Count: number;
+    hsk1Target: number;
     hsk2Target: number;
+    hsk3Target: number;
+    levelBreakdowns?: Record<string, Record<string, number>>;
     dueReviewCount: number;
     grammarTotal: number;
     grammarMastered: number;
@@ -37,6 +43,7 @@ interface CurriculumSummary {
 }
 
 export default function DashboardPage() {
+  const { user } = useAuth();
   const [stats, setStats] = useState<Stats>({
     vocabularyCount: 0,
     practiceSetCount: 0,
@@ -107,11 +114,11 @@ export default function DashboardPage() {
           <div className="relative flex items-start justify-between gap-3">
             <div>
               <span className="text-xs font-extrabold uppercase tracking-wider text-peach-700">
-                Nhịp học cá nhân
+                Nhịp học của {user?.displayName || user?.username}
               </span>
               <h2 className="text-xl font-extrabold text-cocoa-900 mt-1">
                 {curriculum
-                  ? `Ngày ${curriculum.profile.currentDayNumber} • HSK 2 (3.0)`
+                  ? `Ngày ${curriculum.profile.currentDayNumber} • ${curriculum.profile.currentLevel || 'HSK1'} (3.0)`
                   : 'Sẵn sàng viết hôm nay'}
               </h2>
             </div>
@@ -219,13 +226,17 @@ export default function DashboardPage() {
                 Tiếng Trung • Ngày {curriculum.profile.currentDayNumber} ({curriculum.profile.dailyMinutesTarget} phút/ngày)
               </span>
             </div>
-            <h2 className="text-2xl font-extrabold tracking-tight">Lộ trình HSK 2 (Bản 3.0)</h2>
+            <h2 className="text-2xl font-extrabold tracking-tight">Lộ trình HSK 1 → 3 (Bản 3.0)</h2>
             <p className="text-sm text-peach-50/95 leading-relaxed">
-              HSK 1: <strong>{curriculum.stats.hsk1Count}</strong> từ • HSK 2:{' '}
+              HSK 1: <strong>{curriculum.stats.hsk1Count}</strong> từ (đã học{' '}
               <strong>
-                {curriculum.stats.hsk2Count}/{curriculum.stats.hsk2Target}
-              </strong>{' '}
-              từ • Cần ôn hôm nay: <strong>{curriculum.stats.dueReviewCount}</strong> từ • Ngữ pháp:{' '}
+                {(curriculum.stats.levelBreakdowns?.HSK1?.learning || 0) +
+                  (curriculum.stats.levelBreakdowns?.HSK1?.review || 0) +
+                  (curriculum.stats.levelBreakdowns?.HSK1?.mastered || 0)}
+              </strong>
+              ) • HSK 2: <strong>{curriculum.stats.hsk2Count}</strong> từ • HSK 3:{' '}
+              <strong>{curriculum.stats.hsk3Count}</strong> từ • Cần ôn:{' '}
+              <strong>{curriculum.stats.dueReviewCount}</strong> từ • Ngữ pháp:{' '}
               <strong>
                 {curriculum.stats.grammarMastered}/{curriculum.stats.grammarTotal}
               </strong>

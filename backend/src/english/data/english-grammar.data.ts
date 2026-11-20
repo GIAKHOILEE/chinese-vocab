@@ -169,4 +169,82 @@ export const ENGLISH_GRAMMAR_DATA: EnglishGrammarSeed[] = [
       { english: 'If she had adapted faster, she would have avoided that consequence.', vietnamese: 'Nếu cô ấy thích nghi nhanh hơn, cô ấy đã tránh được hệ quả đó.' },
     ],
   },
+  {
+    cefrLevel: 'A1',
+    orderIndex: 13,
+    title: 'Giới từ chỉ thời gian & nơi chốn (in / on / at)',
+    pattern: 'at + giờ/địa điểm cụ thể  |  on + ngày/thứ/bề mặt  |  in + tháng/năm/không gian kín',
+    explanation:
+      'at dùng cho giờ giấc (at 7 a.m.) hoặc điểm cụ thể (at home, at work). on dùng cho thứ/ngày (on Monday) và bề mặt (on the table). in dùng cho tháng, năm, buổi trong ngày (in the morning) và bên trong (in Hanoi).',
+    commonMistakes: 'Nói "in Monday" hoặc "on the morning" -> Đúng: on Monday, in the morning.',
+    examples: [
+      { english: 'I usually wake up at 6:30 in the morning.', vietnamese: 'Tôi thường thức dậy lúc 6:30 vào buổi sáng.' },
+      { english: 'We have an English class on Tuesday.', vietnamese: 'Chúng tôi có lớp tiếng Anh vào thứ Ba.' },
+    ],
+  },
+  {
+    cefrLevel: 'A1',
+    orderIndex: 14,
+    title: 'Trạng từ tần suất (always / usually / often / sometimes / never)',
+    pattern: 'S + Trạng từ tần suất + V thường  |  S + am/is/are + Trạng từ tần suất',
+    explanation:
+      'Trạng từ tần suất đứng TRƯỚC động từ thường nhưng đứng SAU động từ to be (am/is/are).',
+    commonMistakes: 'Đặt "usually" trước to be (Sai: She usually is late -> Đúng: She is usually late).',
+    examples: [
+      { english: 'He always reviews new vocabulary before sleeping.', vietnamese: 'Anh ấy luôn ôn lại từ vựng mới trước khi ngủ.' },
+      { english: 'They are never late for important meetings.', vietnamese: 'Họ không bao giờ đi trễ các cuộc họp quan trọng.' },
+    ],
+  },
+  {
+    cefrLevel: 'A2',
+    orderIndex: 15,
+    title: 'Danh từ đếm được & không đếm được (much / many / a lot of / some / any)',
+    pattern: 'many + N đếm được số nhiều  |  much + N không đếm được  |  some (khẳng định) / any (phủ định, nghi vấn)',
+    explanation:
+      'Dùng many cho danh từ đếm được số nhiều (many books), much cho danh từ không đếm được (much time, much water). A lot of dùng được cho cả hai.',
+    commonMistakes: 'Thêm -s vào danh từ không đếm được như information, advice, luggage, homework.',
+    examples: [
+      { english: 'How much time do you spend practicing every day?', vietnamese: 'Bạn dành bao nhiêu thời gian luyện tập mỗi ngày?' },
+      { english: 'She didn’t bring much luggage for the trip.', vietnamese: 'Cô ấy không mang nhiều hành lý cho chuyến đi.' },
+    ],
+  },
+  {
+    cefrLevel: 'B1',
+    orderIndex: 16,
+    title: 'Danh động từ (Gerund V-ing) vs Động từ nguyên mẫu có "to" (to-V)',
+    pattern: 'enjoy / avoid / finish / suggest / practice + V-ing  |  decide / plan / hope / want + to-V',
+    explanation:
+      'Một số động từ đi kèm V-ing (enjoy learning, finish writing, suggest starting), trong khi nhóm khác đi kèm to-V (decide to study, hope to improve). Sau giới từ LUÔN dùng V-ing.',
+    commonMistakes: 'Sau giới từ dùng to-V (Sai: good at to speak -> Đúng: good at speaking).',
+    examples: [
+      { english: 'I really enjoy practicing English with my friends.', vietnamese: 'Tôi thực sự thích luyện tiếng Anh cùng bạn bè.' },
+      { english: 'She decided to focus on her pronunciation this month.', vietnamese: 'Cô ấy quyết định tập trung vào phát âm trong tháng này.' },
+    ],
+  },
+  {
+    cefrLevel: 'B1',
+    orderIndex: 17,
+    title: 'Câu tường thuật cơ bản (Reported Speech)',
+    pattern: 'S + said (that) / told + O + Mệnh đề lùi 1 thì',
+    explanation:
+      'Khi tường thuật lại lời nói ở quá khứ, động từ lùi một thì (hiện tại đơn → quá khứ đơn, will → would, can → could) và đổi đại từ, trạng từ thời gian cho phù hợp.',
+    commonMistakes: 'Dùng "said me" thay vì "told me" hoặc "said to me".',
+    examples: [
+      { english: 'The teacher told us that daily review was essential.', vietnamese: 'Giáo viên nói với chúng tôi rằng ôn tập hàng ngày rất cần thiết.' },
+      { english: 'He said he would send me the report the next day.', vietnamese: 'Anh ấy nói anh ấy sẽ gửi báo cáo cho tôi vào ngày hôm sau.' },
+    ],
+  },
+  {
+    cefrLevel: 'B2',
+    orderIndex: 18,
+    title: 'Đảo ngữ nhấn mạnh (Inversion: Not only... but also / Never / Seldom)',
+    pattern: 'Not only / Never / Seldom / Rarely + Trợ động từ + S + V',
+    explanation:
+      'Đặt trạng từ phủ định hoặc giới hạn lên đầu câu để nhấn mạnh trong văn phong B2 trang trọng, đồng thời đảo trợ động từ (do/did/have/can/will) lên trước chủ ngữ.',
+    commonMistakes: 'Quên đảo trợ động từ lên trước chủ ngữ sau "Not only" ở đầu câu.',
+    examples: [
+      { english: 'Not only does reading expand your vocabulary, but it also improves your writing.', vietnamese: 'Đọc sách không chỉ mở rộng vốn từ mà còn cải thiện kỹ năng viết của bạn.' },
+      { english: 'Never have I seen such a well-organized study plan.', vietnamese: 'Chưa bao giờ tôi thấy một kế hoạch học tập được sắp xếp tốt đến vậy.' },
+    ],
+  },
 ];

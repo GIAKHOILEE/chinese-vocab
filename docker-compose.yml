@@ -31,8 +31,8 @@ services:
       - "3002:3002"
     environment:
       DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/chinese_vocab_db?schema=public
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      JWT_SECRET: ${JWT_SECRET:-chinese-vocab-docker-jwt-secret}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
       PORT: 3002
     depends_on:
       postgres:

@@ -42,7 +42,7 @@ export default function ChineseGamesPage() {
     <VocabGames
       language="zh"
       words={words}
-      levels={['ALL', 'HSK1', 'HSK2']}
+      levels={['ALL', 'HSK1', 'HSK2', 'HSK3']}
       selectedLevel={level}
       onLevelChange={setLevel}
     />

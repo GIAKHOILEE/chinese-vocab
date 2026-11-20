@@ -15,19 +15,15 @@ export interface PlacementQuestion {
 }
 
 const PLACEMENT_QUESTIONS: PlacementQuestion[] = [
-  // A1
   { id: 'q1', level: 'A1', question: 'She ___ to work by bus every morning.', options: ['go', 'goes', 'going', 'is go'], correctIndex: 1 },
   { id: 'q2', level: 'A1', question: '___ a book and two pens on my desk.', options: ['Have', 'There are', 'There is', 'It has'], correctIndex: 2 },
   { id: 'q3', level: 'A1', question: 'Right now, they ___ English in the living room.', options: ['study', 'are studying', 'studied', 'studying'], correctIndex: 1 },
-  // A2
   { id: 'q4', level: 'A2', question: 'Yesterday I ___ to the supermarket because I needed some fruit.', options: ['go', 'have gone', 'went', 'was go'], correctIndex: 2 },
   { id: 'q5', level: 'A2', question: 'This train is much ___ than the old bus.', options: ['convenient', 'more convenient', 'most convenient', 'convenienter'], correctIndex: 1 },
   { id: 'q6', level: 'A2', question: 'Look at those dark clouds! It ___ rain soon.', options: ['is going to', 'will to', 'goes to', 'was'], correctIndex: 0 },
-  // B1
   { id: 'q7', level: 'B1', question: 'I ___ in Ho Chi Minh City since 2021.', options: ['live', 'am living', 'have lived', 'lived'], correctIndex: 2 },
   { id: 'q8', level: 'B1', question: 'If I ___ more free time, I would practice speaking every day.', options: ['have', 'had', 'will have', 'would have'], correctIndex: 1 },
   { id: 'q9', level: 'B1', question: 'The report ___ by the manager before the meeting started.', options: ['reviewed', 'was reviewed', 'is reviewing', 'has review'], correctIndex: 1 },
-  // B2
   { id: 'q10', level: 'B2', question: 'She looks exhausted; she ___ all night for the presentation.', options: ['must work', 'should work', 'must have worked', 'can have worked'], correctIndex: 2 },
   { id: 'q11', level: 'B2', question: '___ the new system, the team became significantly more efficient.', options: ['Having implemented', 'Implemented', 'To implement', 'Have implemented'], correctIndex: 0 },
   { id: 'q12', level: 'B2', question: 'If they had negotiated more carefully, they ___ that consequence.', options: ['would avoid', 'will avoid', 'would have avoided', 'had avoided'], correctIndex: 2 },
@@ -35,6 +31,8 @@ const PLACEMENT_QUESTIONS: PlacementQuestion[] = [
 
 @Injectable()
 export class EnglishService {
+  private seedingPromise: Promise<void> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly geminiService: GeminiService,
@@ -49,19 +47,19 @@ export class EnglishService {
     return JSON.parse(cleaned) as T;
   }
 
-  async getOrCreateProfile() {
-    let profile = await this.prisma.englishProfile.findUnique({ where: { id: 'default' } });
+  async getOrCreateProfile(userId: string) {
+    let profile = await this.prisma.englishProfile.findUnique({ where: { userId } });
     if (!profile) {
       profile = await this.prisma.englishProfile.create({
         data: {
-          id: 'default',
+          userId,
           currentLevel: 'A1',
           placementDone: false,
           dailyMinutesTarget: 60,
           newWordsPerDay: 12,
           reviewWordsPerDay: 20,
           grammarPerDay: 1,
-          preferredModel: 'gemini-2.5-flash',
+          preferredModel: 'gemini-3-flash-preview',
           currentDayNumber: 1,
         },
       });
@@ -69,67 +67,91 @@ export class EnglishService {
     return profile;
   }
 
-  async updateProfile(data: {
-    currentLevel?: string;
-    dailyMinutesTarget?: number;
-    newWordsPerDay?: number;
-    reviewWordsPerDay?: number;
-    grammarPerDay?: number;
-    preferredModel?: string;
-  }) {
-    await this.getOrCreateProfile();
+  async updateProfile(
+    userId: string,
+    data: {
+      currentLevel?: string;
+      dailyMinutesTarget?: number;
+      newWordsPerDay?: number;
+      reviewWordsPerDay?: number;
+      grammarPerDay?: number;
+      preferredModel?: string;
+    },
+  ) {
+    await this.getOrCreateProfile(userId);
     return this.prisma.englishProfile.update({
-      where: { id: 'default' },
+      where: { userId },
       data,
     });
   }
 
-  async syncCurriculum() {
-    const existingWords = await this.prisma.englishVocab.findMany({ select: { word: true } });
-    const wordSet = new Set(existingWords.map((w) => w.word.toLowerCase()));
+  private async syncCurriculum() {
+    const existingWords = await this.prisma.englishVocab.findMany({
+      where: { scopeKey: 'GLOBAL' },
+      select: { word: true },
+    });
+    const wordSet = new Set(existingWords.map((w) => w.word.trim().toLowerCase()));
 
-    let addedWords = 0;
+    const toInsert: Array<{
+      ownerId: null;
+      scopeKey: string;
+      word: string;
+      ipa: string;
+      meaning: string;
+      partOfSpeech: string;
+      cefrLevel: string;
+      topic: string;
+      exampleEn: string;
+      exampleVi: string;
+    }> = [];
+
     for (const item of ENGLISH_VOCAB_DATA) {
-      if (wordSet.has(item.word.toLowerCase())) continue;
-      try {
-        await this.prisma.englishVocab.create({
-          data: {
-            word: item.word,
-            ipa: item.ipa,
-            meaning: item.meaning,
-            partOfSpeech: item.partOfSpeech,
-            cefrLevel: item.cefrLevel,
-            topic: item.topic,
-            exampleEn: item.exampleEn,
-            exampleVi: item.exampleVi,
-            status: 'new',
-          },
-        });
-        wordSet.add(item.word.toLowerCase());
-        addedWords++;
-      } catch {
-        // Skip duplicate
-      }
+      const lower = item.word.trim().toLowerCase();
+      if (!lower || wordSet.has(lower)) continue;
+      wordSet.add(lower);
+      toInsert.push({
+        ownerId: null,
+        scopeKey: 'GLOBAL',
+        word: item.word.trim(),
+        ipa: item.ipa || '',
+        meaning: item.meaning || '',
+        partOfSpeech: item.partOfSpeech || '',
+        cefrLevel: item.cefrLevel,
+        topic: item.topic || 'Daily Life & Greetings',
+        exampleEn: item.exampleEn || '',
+        exampleVi: item.exampleVi || '',
+      });
     }
 
+    let addedWords = 0;
+    const CHUNK = 500;
+    for (let i = 0; i < toInsert.length; i += CHUNK) {
+      const res = await this.prisma.englishVocab.createMany({
+        data: toInsert.slice(i, i + CHUNK),
+        skipDuplicates: true,
+      });
+      addedWords += res.count;
+    }
+
+    const existingGrammarTitles = new Set(
+      (await this.prisma.englishGrammar.findMany({ select: { title: true } })).map((g) => g.title),
+    );
     let addedGrammar = 0;
     for (const g of ENGLISH_GRAMMAR_DATA) {
-      const exists = await this.prisma.englishGrammar.findUnique({ where: { title: g.title } });
-      if (!exists) {
-        await this.prisma.englishGrammar.create({
-          data: {
-            cefrLevel: g.cefrLevel,
-            orderIndex: g.orderIndex,
-            title: g.title,
-            pattern: g.pattern,
-            explanation: g.explanation,
-            commonMistakes: g.commonMistakes,
-            examples: g.examples,
-            status: 'new',
-          },
-        });
-        addedGrammar++;
-      }
+      if (existingGrammarTitles.has(g.title)) continue;
+      await this.prisma.englishGrammar.create({
+        data: {
+          cefrLevel: g.cefrLevel,
+          orderIndex: g.orderIndex,
+          title: g.title,
+          pattern: g.pattern,
+          explanation: g.explanation,
+          commonMistakes: g.commonMistakes,
+          examples: g.examples,
+        },
+      });
+      existingGrammarTitles.add(g.title);
+      addedGrammar++;
     }
 
     return {
@@ -139,37 +161,82 @@ export class EnglishService {
     };
   }
 
-  async ensureSeeded() {
-    const count = await this.prisma.englishVocab.count();
-    if (count === 0) {
-      await this.syncCurriculum();
-    }
+  async ensureSeeded(): Promise<void> {
+    if (this.seedingPromise) return this.seedingPromise;
+
+    this.seedingPromise = (async () => {
+      try {
+        const [vocabCount, grammarCount] = await Promise.all([
+          this.prisma.englishVocab.count({ where: { ownerId: null } }),
+          this.prisma.englishGrammar.count(),
+        ]);
+        if (vocabCount < ENGLISH_VOCAB_DATA.length || grammarCount < ENGLISH_GRAMMAR_DATA.length) {
+          await this.syncCurriculum();
+        }
+      } finally {
+        this.seedingPromise = null;
+      }
+    })();
+
+    return this.seedingPromise;
   }
 
-  async getSummary() {
+  async getSummary(userId: string) {
     await this.ensureSeeded();
-    const profile = await this.getOrCreateProfile();
+    const profile = await this.getOrCreateProfile(userId);
     const now = new Date();
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
 
-    const [byLevel, dueReviewCount, grammarTotal, grammarMastered, recentLogs] = await Promise.all([
-      this.prisma.englishVocab.groupBy({ by: ['cefrLevel'], _count: true }),
-      this.prisma.englishVocab.count({
-        where: { status: { not: 'new' }, nextReviewAt: { lte: now } },
-      }),
-      this.prisma.englishGrammar.count(),
-      this.prisma.englishGrammar.count({ where: { status: 'mastered' } }),
-      this.prisma.englishStudyLog.findMany({ orderBy: { createdAt: 'desc' }, take: 5 }),
-    ]);
+    const [byLevel, userProgresses, dueReviewCount, grammarTotal, grammarMastered, recentLogs] =
+      await Promise.all([
+        this.prisma.englishVocab.groupBy({
+          by: ['cefrLevel'],
+          where: visibleFilter,
+          _count: true,
+        }),
+        this.prisma.englishVocabProgress.findMany({
+          where: { userId },
+          select: { status: true, englishVocab: { select: { cefrLevel: true } } },
+        }),
+        this.prisma.englishVocabProgress.count({
+          where: { userId, status: { not: 'new' }, nextReviewAt: { lte: now } },
+        }),
+        this.prisma.englishGrammar.count(),
+        this.prisma.englishGrammarProgress.count({ where: { userId, status: 'mastered' } }),
+        this.prisma.englishStudyLog.findMany({
+          where: { userId },
+          orderBy: { createdAt: 'desc' },
+          take: 5,
+        }),
+      ]);
 
     const levelCounts: Record<string, number> = { A1: 0, A2: 0, B1: 0, B2: 0 };
     for (const row of byLevel) {
       levelCounts[row.cefrLevel] = row._count;
     }
 
+    const levelBreakdowns: Record<string, Record<string, number>> = {
+      A1: { new: 0, learning: 0, review: 0, mastered: 0 },
+      A2: { new: 0, learning: 0, review: 0, mastered: 0 },
+      B1: { new: 0, learning: 0, review: 0, mastered: 0 },
+      B2: { new: 0, learning: 0, review: 0, mastered: 0 },
+    };
+    const tracked: Record<string, number> = { A1: 0, A2: 0, B1: 0, B2: 0 };
+    for (const p of userProgresses) {
+      const lv = p.englishVocab.cefrLevel;
+      if (!levelBreakdowns[lv]) continue;
+      levelBreakdowns[lv][p.status] = (levelBreakdowns[lv][p.status] || 0) + 1;
+      tracked[lv]++;
+    }
+    for (const lv of LEVEL_ORDER) {
+      levelBreakdowns[lv].new += Math.max(0, (levelCounts[lv] || 0) - tracked[lv]);
+    }
+
     return {
       profile,
       stats: {
         levelCounts,
+        levelBreakdowns,
         totalWords: Object.values(levelCounts).reduce((a, b) => a + b, 0),
         dueReviewCount,
         grammarTotal,
@@ -202,11 +269,14 @@ export class EnglishService {
     };
   }
 
-  async submitPlacementTest(body: {
-    answers: Record<string, number>;
-    writingSamples?: Record<string, string>;
-    model?: string;
-  }) {
+  async submitPlacementTest(
+    userId: string,
+    body: {
+      answers: Record<string, number>;
+      writingSamples?: Record<string, string>;
+      model?: string;
+    },
+  ) {
     let correctTotal = 0;
     const byLevel: Record<string, { correct: number; total: number }> = {
       A1: { correct: 0, total: 0 },
@@ -269,9 +339,9 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
       }
     }
 
-    await this.getOrCreateProfile();
+    await this.getOrCreateProfile(userId);
     await this.prisma.englishProfile.update({
-      where: { id: 'default' },
+      where: { userId },
       data: {
         currentLevel: recommendedLevel,
         placementDone: true,
@@ -289,50 +359,86 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
     };
   }
 
-  async getTodayPlan(requestedTopic?: string, requestedLevel?: string) {
+  async getTodayPlan(userId: string, requestedTopic?: string, requestedLevel?: string) {
     await this.ensureSeeded();
-    const profile = await this.getOrCreateProfile();
+    const profile = await this.getOrCreateProfile(userId);
     const activeLevel =
       requestedLevel && LEVEL_ORDER.includes(requestedLevel as any)
         ? requestedLevel
         : profile.currentLevel;
 
     const now = new Date();
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
 
-    // 1. Chặng 1: Ôn từ cũ đến hạn SRS (hoặc từ đã học lâu chưa ôn)
-    let reviewWords = await this.prisma.englishVocab.findMany({
+    // 1. Chặng 1: Ôn từ cũ đến hạn SRS của user
+    const dueProgresses = await this.prisma.englishVocabProgress.findMany({
       where: {
+        userId,
         status: { not: 'new' },
         nextReviewAt: { lte: now },
+        englishVocab: visibleFilter,
       },
+      include: { englishVocab: true },
       orderBy: [{ wrongCount: 'desc' }, { nextReviewAt: 'asc' }],
       take: profile.reviewWordsPerDay,
     });
 
+    let reviewWords = dueProgresses.map((p) => ({
+      ...p.englishVocab,
+      status: p.status,
+      srsLevel: p.srsLevel,
+      wrongCount: p.wrongCount,
+      lastMistakeNote: p.lastMistakeNote,
+    }));
+
     if (reviewWords.length < profile.reviewWordsPerDay) {
       const pickedIds = reviewWords.map((r) => r.id);
-      const extra = await this.prisma.englishVocab.findMany({
+      const extra = await this.prisma.englishVocabProgress.findMany({
         where: {
-          id: { notIn: pickedIds },
+          userId,
+          englishVocabId: { notIn: pickedIds },
           status: { not: 'new' },
+          englishVocab: visibleFilter,
         },
+        include: { englishVocab: true },
         orderBy: { lastReviewedAt: 'asc' },
         take: profile.reviewWordsPerDay - reviewWords.length,
       });
-      reviewWords = [...reviewWords, ...extra];
+      reviewWords = [
+        ...reviewWords,
+        ...extra.map((p) => ({
+          ...p.englishVocab,
+          status: p.status,
+          srsLevel: p.srsLevel,
+          wrongCount: p.wrongCount,
+          lastMistakeNote: p.lastMistakeNote,
+        })),
+      ];
     }
 
-    // 2. Chặng 2: Gom từ mới ở trình độ hiện tại theo chủ đề
+    // 2. Chặng 2: Gom từ mới ở trình độ activeLevel mà user chưa học
     const allNewAtLevel = await this.prisma.englishVocab.findMany({
-      where: { cefrLevel: activeLevel, status: 'new' },
+      where: {
+        ...visibleFilter,
+        cefrLevel: activeLevel,
+        NOT: {
+          progresses: {
+            some: {
+              userId,
+              status: { not: 'new' },
+            },
+          },
+        },
+      },
       orderBy: { createdAt: 'asc' },
     });
 
     const topicGroups = new Map<string, typeof allNewAtLevel>();
     for (const w of allNewAtLevel) {
-      const arr = topicGroups.get(w.topic) || [];
+      const topic = w.topic?.trim() || 'Daily Life & Greetings';
+      const arr = topicGroups.get(topic) || [];
       arr.push(w);
-      topicGroups.set(w.topic, arr);
+      topicGroups.set(topic, arr);
     }
 
     const availableTopics = Array.from(topicGroups.entries()).map(([topic, words]) => ({
@@ -348,16 +454,26 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
     let newWords = (topicGroups.get(selectedTopic) || []).slice(0, profile.newWordsPerDay);
     if (newWords.length < profile.newWordsPerDay && allNewAtLevel.length > newWords.length) {
       const ids = new Set(newWords.map((w) => w.id));
-      const extras = allNewAtLevel.filter((w) => !ids.has(w.id)).slice(0, profile.newWordsPerDay - newWords.length);
+      const extras = allNewAtLevel
+        .filter((w) => !ids.has(w.id))
+        .slice(0, profile.newWordsPerDay - newWords.length);
       newWords = [...newWords, ...extras];
     }
 
-    // 3. Chặng 3: Ngữ pháp theo cấp độ hiện tại
-    const grammarPoints = await this.prisma.englishGrammar.findMany({
-      where: { cefrLevel: activeLevel, status: { not: 'mastered' } },
+    // 3. Chặng 3: Ngữ pháp theo cấp độ & tiến độ của user
+    const levelGrammars = await this.prisma.englishGrammar.findMany({
+      where: { cefrLevel: activeLevel },
+      include: { progresses: { where: { userId } } },
       orderBy: { orderIndex: 'asc' },
-      take: profile.grammarPerDay,
     });
+
+    const grammarPoints = levelGrammars
+      .map((g) => ({
+        ...g,
+        status: (g.progresses[0]?.status || 'new') as 'new' | 'learning' | 'mastered',
+      }))
+      .filter((g) => g.status !== 'mastered')
+      .slice(0, profile.grammarPerDay);
 
     const total = profile.dailyMinutesTarget;
     return {
@@ -377,75 +493,30 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
     };
   }
 
-  async aiExpandWords(cefrLevel: string, topic?: string, count = 20, model?: string) {
-    const level = LEVEL_ORDER.includes(cefrLevel as any) ? cefrLevel : 'A1';
-    const existing = await this.prisma.englishVocab.findMany({ select: { word: true } });
-    const existingSet = new Set(existing.map((e) => e.word.toLowerCase()));
-    const sampleExisting = Array.from(existingSet).slice(-100).join(', ');
-
-    const prompt = `Hãy cung cấp ${count} từ vựng tiếng Anh thực tế thuộc trình độ **CEFR ${level}** ${topic ? `về chủ đề "${topic}"` : 'theo các chủ đề giao tiếp & công việc thông dụng'} mà CHƯA có trong danh sách:
-[${sampleExisting}]
-
-Trả về STRICT JSON:
-{
-  "words": [
-    {
-      "word": "từ tiếng Anh",
-      "ipa": "/phiên âm IPA/",
-      "meaning": "nghĩa tiếng Việt ngắn gọn",
-      "partOfSpeech": "Verb | Noun | Adjective | Adverb",
-      "topic": "Tên chủ đề tiếng Anh ngắn gọn",
-      "exampleEn": "1 câu ví dụ tự nhiên trình độ ${level}",
-      "exampleVi": "Nghĩa tiếng Việt của câu ví dụ"
-    }
-  ]
-}`;
-
-    const raw = await this.geminiService.generateText(prompt, {
-      model,
-      systemInstruction: 'You are an English CEFR curriculum designer for Vietnamese learners. Output valid JSON only.',
-      temperature: 0.4,
+  async submitSrsReview(
+    userId: string,
+    englishVocabId: string,
+    quality: 'again' | 'hard' | 'good' | 'easy',
+  ) {
+    const vocab = await this.prisma.englishVocab.findFirst({
+      where: {
+        id: englishVocabId,
+        OR: [{ ownerId: null }, { ownerId: userId }],
+      },
     });
-
-    const parsed = this.parseJsonSafe<{ words: Array<any> }>(raw);
-    let addedCount = 0;
-
-    for (const item of parsed.words || []) {
-      const w = item.word?.trim();
-      if (!w || existingSet.has(w.toLowerCase())) continue;
-      try {
-        await this.prisma.englishVocab.create({
-          data: {
-            word: w,
-            ipa: item.ipa || '',
-            meaning: item.meaning || '',
-            partOfSpeech: item.partOfSpeech || '',
-            cefrLevel: level,
-            topic: item.topic || topic || 'General Communication',
-            exampleEn: item.exampleEn || '',
-            exampleVi: item.exampleVi || '',
-            status: 'new',
-          },
-        });
-        existingSet.add(w.toLowerCase());
-        addedCount++;
-      } catch {
-        // Ignore duplicate
-      }
-    }
-
-    return { addedCount, level };
-  }
-
-  async submitSrsReview(id: string, quality: 'again' | 'hard' | 'good' | 'easy') {
-    const vocab = await this.prisma.englishVocab.findUnique({ where: { id } });
     if (!vocab) throw new NotFoundException('Không tìm thấy từ vựng tiếng Anh.');
 
-    let srsLevel = vocab.srsLevel;
-    let intervalDays = vocab.intervalDays;
-    let easeFactor = vocab.easeFactor;
-    let correctCount = vocab.correctCount;
-    let wrongCount = vocab.wrongCount;
+    const prev = await this.prisma.englishVocabProgress.upsert({
+      where: { userId_englishVocabId: { userId, englishVocabId } },
+      create: { userId, englishVocabId, status: 'new' },
+      update: {},
+    });
+
+    let srsLevel = prev.srsLevel;
+    let intervalDays = prev.intervalDays;
+    let easeFactor = prev.easeFactor;
+    let correctCount = prev.correctCount;
+    let wrongCount = prev.wrongCount;
 
     if (quality === 'again') {
       srsLevel = 0;
@@ -470,10 +541,16 @@ Trả về STRICT JSON:
     }
 
     const status =
-      quality === 'again' ? 'learning' : srsLevel >= 4 ? 'mastered' : srsLevel >= 2 ? 'review' : 'learning';
+      quality === 'again'
+        ? 'learning'
+        : srsLevel >= 4
+          ? 'mastered'
+          : srsLevel >= 2
+            ? 'review'
+            : 'learning';
 
-    return this.prisma.englishVocab.update({
-      where: { id },
+    return this.prisma.englishVocabProgress.update({
+      where: { userId_englishVocabId: { userId, englishVocabId } },
       data: {
         status,
         srsLevel,
@@ -481,18 +558,28 @@ Trả về STRICT JSON:
         easeFactor,
         nextReviewAt: new Date(Date.now() + intervalDays * 24 * 60 * 60 * 1000),
         lastReviewedAt: new Date(),
-        reviewCount: vocab.reviewCount + 1,
+        reviewCount: prev.reviewCount + 1,
         correctCount,
         wrongCount,
       },
     });
   }
 
-  async getWordDeepDive(id: string, model?: string) {
-    const vocab = await this.prisma.englishVocab.findUnique({ where: { id } });
+  async getWordDeepDive(userId: string, englishVocabId: string, model?: string) {
+    const vocab = await this.prisma.englishVocab.findFirst({
+      where: {
+        id: englishVocabId,
+        OR: [{ ownerId: null }, { ownerId: userId }],
+      },
+    });
     if (!vocab) throw new NotFoundException('Không tìm thấy từ vựng tiếng Anh.');
-    if (vocab.aiDeepDive) {
-      return { cached: true, word: vocab.word, deepDive: vocab.aiDeepDive };
+
+    const progress = await this.prisma.englishVocabProgress.findUnique({
+      where: { userId_englishVocabId: { userId, englishVocabId } },
+    });
+
+    if (progress?.aiDeepDive) {
+      return { cached: true, word: vocab.word, deepDive: progress.aiDeepDive };
     }
 
     const prompt = `Phân tích chuyên sâu từ tiếng Anh trình độ ${vocab.cefrLevel} cho người Việt:
@@ -506,7 +593,7 @@ Trả về STRICT JSON:
   "collocations": [
     { "phrase": "cụm từ hay đi kèm", "meaning": "nghĩa tiếng Việt" }
   ],
-  "commonTrap": "Lỗi người Việt hay mắc khi dùng từ này (giới từ đi kèm, từ dễ nhầm)",
+  "commonTrap": "Lỗi người Việt hay mắc khi dùng từ này",
   "examples": [
     { "english": "Câu ví dụ tự nhiên", "vietnamese": "Nghĩa tiếng Việt" }
   ]
@@ -519,28 +606,42 @@ Trả về STRICT JSON:
     });
     const parsed = this.parseJsonSafe(raw);
 
-    await this.prisma.englishVocab.update({
-      where: { id },
-      data: { aiDeepDive: parsed as any },
+    await this.prisma.englishVocabProgress.upsert({
+      where: { userId_englishVocabId: { userId, englishVocabId } },
+      create: {
+        userId,
+        englishVocabId,
+        status: 'new',
+        aiDeepDive: parsed as any,
+      },
+      update: { aiDeepDive: parsed as any },
     });
 
     return { cached: false, word: vocab.word, deepDive: parsed };
   }
 
-  async generateTopicDialogue(body: {
-    newWordIds: string[];
-    oldWordIds?: string[];
-    topic?: string;
-    cefrLevel?: string;
-    model?: string;
-  }) {
+  async generateTopicDialogue(
+    userId: string,
+    body: {
+      newWordIds: string[];
+      oldWordIds?: string[];
+      topic?: string;
+      cefrLevel?: string;
+      model?: string;
+    },
+  ) {
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
     const [newWords, oldWords, extraLearned] = await Promise.all([
-      this.prisma.englishVocab.findMany({ where: { id: { in: body.newWordIds || [] } } }),
+      this.prisma.englishVocab.findMany({
+        where: { ...visibleFilter, id: { in: body.newWordIds || [] } },
+      }),
       body.oldWordIds?.length
-        ? this.prisma.englishVocab.findMany({ where: { id: { in: body.oldWordIds } } })
+        ? this.prisma.englishVocab.findMany({
+            where: { ...visibleFilter, id: { in: body.oldWordIds } },
+          })
         : Promise.resolve([]),
       this.prisma.englishVocab.findMany({
-        where: { cefrLevel: 'A1' },
+        where: { ...visibleFilter, cefrLevel: 'A1' },
         take: 25,
       }),
     ]);
@@ -582,16 +683,20 @@ Trả về STRICT JSON:
     return this.parseJsonSafe(raw);
   }
 
-  async generateMixedPractice(body: {
-    newWordIds: string[];
-    reviewWordIds: string[];
-    grammarIds: string[];
-    cefrLevel?: string;
-    model?: string;
-  }) {
+  async generateMixedPractice(
+    userId: string,
+    body: {
+      newWordIds: string[];
+      reviewWordIds: string[];
+      grammarIds: string[];
+      cefrLevel?: string;
+      model?: string;
+    },
+  ) {
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
     const [newWords, reviewWords, grammars] = await Promise.all([
-      this.prisma.englishVocab.findMany({ where: { id: { in: body.newWordIds || [] } } }),
-      this.prisma.englishVocab.findMany({ where: { id: { in: body.reviewWordIds || [] } } }),
+      this.prisma.englishVocab.findMany({ where: { ...visibleFilter, id: { in: body.newWordIds || [] } } }),
+      this.prisma.englishVocab.findMany({ where: { ...visibleFilter, id: { in: body.reviewWordIds || [] } } }),
       this.prisma.englishGrammar.findMany({ where: { id: { in: body.grammarIds || [] } } }),
     ]);
 
@@ -605,7 +710,7 @@ Trả về STRICT JSON:
 - Ngữ pháp trọng tâm: [${grammarText || 'Cơ bản'}]
 
 Yêu cầu:
-1. 15 câu dịch Việt -> Anh kết hợp từ mới + từ cũ + ngữ pháp trọng tâm (đa dạng tình huống đời sống & công việc).
+1. 15 câu dịch Việt -> Anh kết hợp từ mới + từ cũ + ngữ pháp trọng tâm.
 2. 3 đề bài viết câu tự do (freePrompts) cho sẵn 2-3 từ khóa.
 
 Trả về STRICT JSON:
@@ -653,10 +758,10 @@ Trả về STRICT JSON:
   "score": 85,
   "isCorrect": true,
   "correctedEnglish": "Câu tiếng Anh tự nhiên & chuẩn xác nhất",
-  "grammarFeedback": "Nhận xét chi tiết ngữ pháp (thì, chia động từ, mạo từ, giới từ...)",
+  "grammarFeedback": "Nhận xét chi tiết ngữ pháp",
   "vocabFeedback": "Nhận xét cách dùng từ & collocations",
-  "naturalnessFeedback": "Người bản xứ có nói vậy không? Gợi ý cách diễn đạt tự nhiên hơn",
-  "personalizedTip": "1 lời khuyên cá nhân hóa ngắn gọn để nhớ lâu",
+  "naturalnessFeedback": "Người bản xứ có nói vậy không?",
+  "personalizedTip": "1 lời khuyên cá nhân hóa ngắn gọn",
   "weakWordsDetected": ["từ dùng sai nếu có"]
 }`;
 
@@ -700,7 +805,7 @@ ${itemsText}
 Trả về STRICT JSON:
 {
   "overallScore": 85,
-  "overallComment": "Nhận xét tổng quan 2-3 câu về điểm mạnh, lỗi ngữ pháp/từ vựng hay lặp lại và lời khuyên cá nhân hóa",
+  "overallComment": "Nhận xét tổng quan 2-3 câu",
   "results": [
     {
       "key": "đúng key ở trên",
@@ -709,7 +814,7 @@ Trả về STRICT JSON:
       "correctedEnglish": "Câu tiếng Anh tự nhiên & chuẩn xác nhất",
       "grammarFeedback": "Nhận xét ngắn gọn ngữ pháp",
       "vocabFeedback": "Nhận xét ngắn gọn từ vựng",
-      "personalizedTip": "1 mẹo nhớ ngắn cho câu này"
+      "personalizedTip": "1 mẹo nhớ ngắn"
     }
   ]
 }`;
@@ -723,14 +828,17 @@ Trả về STRICT JSON:
     return this.parseJsonSafe(raw);
   }
 
-  async completeDailySession(body: {
-    minutesSpent: number;
-    newWordsLearned: number;
-    wordsReviewed: number;
-    averageScore?: number;
-    model?: string;
-  }) {
-    const profile = await this.getOrCreateProfile();
+  async completeDailySession(
+    userId: string,
+    body: {
+      minutesSpent: number;
+      newWordsLearned: number;
+      wordsReviewed: number;
+      averageScore?: number;
+      model?: string;
+    },
+  ) {
+    const profile = await this.getOrCreateProfile(userId);
     const today = new Date().toISOString().slice(0, 10);
 
     let aiCoachingFeedback: any = {
@@ -756,6 +864,7 @@ Trả về STRICT JSON: { "headline": "...", "strengths": "...", "areasToImprove
 
     const log = await this.prisma.englishStudyLog.create({
       data: {
+        userId,
         date: today,
         dayNumber: profile.currentDayNumber,
         level: profile.currentLevel,
@@ -768,35 +877,91 @@ Trả về STRICT JSON: { "headline": "...", "strengths": "...", "areasToImprove
     });
 
     await this.prisma.englishProfile.update({
-      where: { id: 'default' },
+      where: { userId },
       data: { currentDayNumber: profile.currentDayNumber + 1 },
     });
 
     return log;
   }
 
-  async getVocabList(level?: string) {
+  async getVocabList(userId: string, level?: string) {
     await this.ensureSeeded();
-    return this.prisma.englishVocab.findMany({
-      where: level && LEVEL_ORDER.includes(level as any) ? { cefrLevel: level } : undefined,
+    const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
+    const where =
+      level && LEVEL_ORDER.includes(level as any)
+        ? { ...visibleFilter, cefrLevel: level }
+        : visibleFilter;
+
+    const words = await this.prisma.englishVocab.findMany({
+      where,
+      include: { progresses: { where: { userId } } },
       orderBy: { createdAt: 'asc' },
     });
+
+    return words.map((w) => ({
+      id: w.id,
+      word: w.word,
+      ipa: w.ipa,
+      meaning: w.meaning,
+      partOfSpeech: w.partOfSpeech,
+      cefrLevel: w.cefrLevel,
+      topic: w.topic,
+      exampleEn: w.exampleEn,
+      exampleVi: w.exampleVi,
+      status: w.progresses[0]?.status || 'new',
+      srsLevel: w.progresses[0]?.srsLevel || 0,
+    }));
   }
 
-  async getGrammarList(level?: string) {
+  async getGrammarList(userId: string, level?: string) {
     await this.ensureSeeded();
-    return this.prisma.englishGrammar.findMany({
+    const grammars = await this.prisma.englishGrammar.findMany({
       where: level && LEVEL_ORDER.includes(level as any) ? { cefrLevel: level } : undefined,
+      include: { progresses: { where: { userId } } },
       orderBy: [{ orderIndex: 'asc' }],
     });
+
+    return grammars.map((g) => ({
+      id: g.id,
+      cefrLevel: g.cefrLevel,
+      orderIndex: g.orderIndex,
+      title: g.title,
+      pattern: g.pattern,
+      explanation: g.explanation,
+      commonMistakes: g.commonMistakes,
+      examples: g.examples,
+      status: (g.progresses[0]?.status || 'new') as 'new' | 'learning' | 'mastered',
+      practiceCount: g.progresses[0]?.practiceCount || 0,
+      lastPracticedAt: g.progresses[0]?.lastPracticedAt || null,
+    }));
   }
 
-  async updateGrammarStatus(id: string, status: 'new' | 'learning' | 'mastered') {
+  async updateGrammarStatus(
+    userId: string,
+    id: string,
+    status: 'new' | 'learning' | 'mastered',
+  ) {
     const existing = await this.prisma.englishGrammar.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Không tìm thấy điểm ngữ pháp.');
-    return this.prisma.englishGrammar.update({
-      where: { id },
-      data: { status, practiceCount: existing.practiceCount + 1, lastPracticedAt: new Date() },
+
+    const prev = await this.prisma.englishGrammarProgress.findUnique({
+      where: { userId_englishGrammarId: { userId, englishGrammarId: id } },
+    });
+
+    return this.prisma.englishGrammarProgress.upsert({
+      where: { userId_englishGrammarId: { userId, englishGrammarId: id } },
+      create: {
+        userId,
+        englishGrammarId: id,
+        status,
+        practiceCount: 1,
+        lastPracticedAt: new Date(),
+      },
+      update: {
+        status,
+        practiceCount: (prev?.practiceCount || 0) + 1,
+        lastPracticedAt: new Date(),
+      },
     });
   }
 }

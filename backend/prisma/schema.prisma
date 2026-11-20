@@ -1,4 +1,4 @@
-// Prisma Schema cho Chinese Writing Practice
+// Prisma Schema cho Multi-User Chinese & English Studio
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,26 +8,66 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Bảng lưu trữ từ vựng của người dùng
-model Vocabulary {
-  id           String         @id @default(uuid())
-  word         String         // Từ tiếng Trung (Ví dụ: 学习)
-  meaning      String         // Nghĩa tiếng Việt (Ví dụ: học)
-  pinyin       String?        // Phiên âm Pinyin (Ví dụ: xuéxí)
-  partOfSpeech String         @default("") // Từ loại (Ví dụ: Động từ, Danh từ, Tính từ...)
-  level        String?        // Cấp độ (Ví dụ: HSK1, HSK2, Beginner)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  progress     VocabProgress?
+// ==================== HỆ THỐNG TÀI KHOẢN & ĐA NGƯỜI DÙNG ====================
 
-  @@unique([word, partOfSpeech])
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  email        String?  @unique
+  passwordHash String
+  displayName  String
+  role         String   @default("USER") // USER | ADMIN
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Từ vựng cá nhân (null = kho từ vựng chuẩn dùng chung toàn hệ thống)
+  customVocabularies  Vocabulary[]
+  customEnglishVocabs EnglishVocab[]
+
+  // Tiến độ & hồ sơ Tiếng Trung (HSK 1 -> HSK 3) riêng theo từng User
+  vocabProgresses   VocabProgress[]
+  grammarProgresses GrammarProgress[]
+  studyProfile      StudyProfile?
+  studyLogs         StudyLog[]
+  practiceSets      PracticeSet[]
+
+  // Tiến độ & hồ sơ Tiếng Anh (A1 -> B2) riêng theo từng User
+  englishVocabProgresses   EnglishVocabProgress[]
+  englishGrammarProgresses EnglishGrammarProgress[]
+  englishProfile           EnglishProfile?
+  englishStudyLogs         EnglishStudyLog[]
+}
+
+// ==================== HỆ THỐNG TIẾNG TRUNG (HSK 1 -> HSK 3, CHUẨN 3.0) ====================
+
+// Từ điển dùng chung (ownerId = null, scopeKey = "GLOBAL") + từ cá nhân (ownerId = userId)
+model Vocabulary {
+  id           String          @id @default(uuid())
+  ownerId      String?
+  owner        User?           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  scopeKey     String          @default("GLOBAL") // "GLOBAL" hoặc ownerId
+  word         String          // Từ tiếng Trung (Ví dụ: 学习)
+  meaning      String          // Nghĩa tiếng Việt (Ví dụ: học)
+  pinyin       String?         // Phiên âm Pinyin (Ví dụ: xuéxí)
+  partOfSpeech String          @default("") // Từ loại
+  level        String?         // Beginner | HSK1 | HSK2 | HSK3 | HSK4
+  topic        String          @default("") // Chủ đề học tập
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  progresses   VocabProgress[]
+
+  @@unique([scopeKey, word, partOfSpeech])
+  @@index([ownerId])
+  @@index([level])
   @@index([word])
 }
 
-// Tiến độ SRS & ghi chú AI cho từng từ vựng
+// Tiến độ SRS & ghi chú AI riêng cho từng cặp (User, Vocabulary)
 model VocabProgress {
   id              String     @id @default(uuid())
-  vocabularyId    String     @unique
+  userId          String
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vocabularyId    String
   vocabulary      Vocabulary @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
   status          String     @default("new") // new | learning | review | mastered
   srsLevel        Int        @default(0)
@@ -44,45 +84,70 @@ model VocabProgress {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  @@index([status])
-  @@index([nextReviewAt])
+  @@unique([userId, vocabularyId])
+  @@index([userId, status])
+  @@index([userId, nextReviewAt])
+  @@index([vocabularyId])
 }
 
-// Bảng ngữ pháp HSK 2 (3.0)
+// Danh mục ngữ pháp HSK 1, HSK 2, HSK 3 (chuẩn 3.0) dùng chung
 model GrammarPoint {
-  id              String    @id @default(uuid())
-  level           String    @default("HSK2")
-  unitNumber      Int       @default(1)
-  orderIndex      Int       @default(1)
-  title           String    @unique
-  pattern         String
-  explanation     String
-  examples        Json      // Array<{ chinese: string; pinyin: string; vietnamese: string }>
-  commonMistakes  String?
-  status          String    @default("new") // new | learning | mastered
-  practiceCount   Int       @default(0)
-  lastPracticedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String            @id @default(uuid())
+  level          String            @default("HSK2") // HSK1 | HSK2 | HSK3
+  unitNumber     Int               @default(1)
+  orderIndex     Int               @default(1)
+  title          String            @unique
+  pattern        String
+  explanation    String
+  examples       Json              // Array<{ chinese: string; pinyin: string; vietnamese: string }>
+  commonMistakes String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  progresses     GrammarProgress[]
+
+  @@index([level, unitNumber, orderIndex])
 }
 
-// Cấu hình lộ trình học cá nhân (1-2 tiếng/ngày)
+// Tiến độ học ngữ pháp Tiếng Trung riêng theo từng User
+model GrammarProgress {
+  id              String       @id @default(uuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grammarPointId  String
+  grammarPoint    GrammarPoint @relation(fields: [grammarPointId], references: [id], onDelete: Cascade)
+  status          String       @default("new") // new | learning | mastered
+  practiceCount   Int          @default(0)
+  lastPracticedAt DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([userId, grammarPointId])
+  @@index([userId, status])
+}
+
+// Cấu hình lộ trình học Tiếng Trung riêng của từng User
 model StudyProfile {
-  id                 String   @id @default("default")
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentLevel       String   @default("HSK1") // HSK1 | HSK2 | HSK3
   dailyMinutesTarget Int      @default(90)
   newWordsPerDay     Int      @default(15)
   reviewWordsPerDay  Int      @default(25)
   grammarPerDay      Int      @default(1)
-  preferredModel     String   @default("gemini-2.5-flash")
+  preferredModel     String   @default("gemini-3-flash-preview")
   currentDayNumber   Int      @default(1)
   updatedAt          DateTime @updatedAt
 }
 
-// Nhật ký buổi học hàng ngày & nhận xét tổng kết AI
+// Nhật ký buổi học Tiếng Trung hàng ngày riêng của từng User
 model StudyLog {
   id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date               String   // YYYY-MM-DD
   dayNumber          Int      @default(1)
+  level              String   @default("HSK1")
   minutesSpent       Int      @default(0)
   newWordsLearned    Int      @default(0)
   wordsReviewed      Int      @default(0)
@@ -90,59 +155,101 @@ model StudyLog {
   score              Int?
   aiCoachingFeedback Json?
   createdAt          DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 // ==================== HỆ THỐNG HỌC TIẾNG ANH (A1 -> B2) ====================
 
+// Từ điển Tiếng Anh dùng chung (ownerId = null, scopeKey = "GLOBAL") + từ cá nhân
 model EnglishVocab {
-  id              String    @id @default(uuid())
-  word            String    @unique
-  ipa             String?
-  meaning         String
-  partOfSpeech    String    @default("")
-  cefrLevel       String    @default("A1") // A1 | A2 | B1 | B2
-  topic           String    @default("Daily Life")
-  exampleEn       String?
-  exampleVi       String?
-  status          String    @default("new") // new | learning | review | mastered
-  srsLevel        Int       @default(0)
-  intervalDays    Float     @default(0)
-  easeFactor      Float     @default(2.5)
-  nextReviewAt    DateTime  @default(now())
+  id           String                 @id @default(uuid())
+  ownerId      String?
+  owner        User?                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  scopeKey     String                 @default("GLOBAL")
+  word         String
+  ipa          String?
+  meaning      String
+  partOfSpeech String                 @default("")
+  cefrLevel    String                 @default("A1") // A1 | A2 | B1 | B2
+  topic        String                 @default("Daily Life")
+  exampleEn    String?
+  exampleVi    String?
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  progresses   EnglishVocabProgress[]
+
+  @@unique([scopeKey, word])
+  @@index([ownerId])
+  @@index([cefrLevel])
+}
+
+// Tiến độ SRS Tiếng Anh riêng theo từng User
+model EnglishVocabProgress {
+  id              String       @id @default(uuid())
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  englishVocabId  String
+  englishVocab    EnglishVocab @relation(fields: [englishVocabId], references: [id], onDelete: Cascade)
+  status          String       @default("new") // new | learning | review | mastered
+  srsLevel        Int          @default(0)
+  intervalDays    Float        @default(0)
+  easeFactor      Float        @default(2.5)
+  nextReviewAt    DateTime     @default(now())
   lastReviewedAt  DateTime?
-  reviewCount     Int       @default(0)
-  correctCount    Int       @default(0)
-  wrongCount      Int       @default(0)
+  reviewCount     Int          @default(0)
+  correctCount    Int          @default(0)
+  wrongCount      Int          @default(0)
   aiDeepDive      Json?
   lastMistakeNote String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
 
-  @@index([cefrLevel])
-  @@index([status])
-  @@index([nextReviewAt])
+  @@unique([userId, englishVocabId])
+  @@index([userId, status])
+  @@index([userId, nextReviewAt])
+  @@index([englishVocabId])
 }
 
+// Danh mục ngữ pháp Tiếng Anh dùng chung
 model EnglishGrammar {
-  id              String    @id @default(uuid())
-  cefrLevel       String    @default("A1") // A1 | A2 | B1 | B2
-  orderIndex      Int       @default(1)
-  title           String    @unique
-  pattern         String
-  explanation     String
-  commonMistakes  String?
-  examples        Json
-  status          String    @default("new") // new | learning | mastered
-  practiceCount   Int       @default(0)
-  lastPracticedAt DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id             String                   @id @default(uuid())
+  cefrLevel      String                   @default("A1") // A1 | A2 | B1 | B2
+  orderIndex     Int                      @default(1)
+  title          String                   @unique
+  pattern        String
+  explanation    String
+  commonMistakes String?
+  examples       Json
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  progresses     EnglishGrammarProgress[]
 
   @@index([cefrLevel])
 }
 
+// Tiến độ ngữ pháp Tiếng Anh riêng theo từng User
+model EnglishGrammarProgress {
+  id               String         @id @default(uuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  englishGrammarId String
+  englishGrammar   EnglishGrammar @relation(fields: [englishGrammarId], references: [id], onDelete: Cascade)
+  status           String         @default("new") // new | learning | mastered
+  practiceCount    Int            @default(0)
+  lastPracticedAt  DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([userId, englishGrammarId])
+  @@index([userId, status])
+}
+
+// Hồ sơ Tiếng Anh riêng theo từng User
 model EnglishProfile {
-  id                 String   @id @default("default")
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   currentLevel       String   @default("A1") // A1 | A2 | B1 | B2
   placementDone      Boolean  @default(false)
   placementScore     Int?
@@ -150,13 +257,16 @@ model EnglishProfile {
   newWordsPerDay     Int      @default(12)
   reviewWordsPerDay  Int      @default(20)
   grammarPerDay      Int      @default(1)
-  preferredModel     String   @default("gemini-2.5-flash")
+  preferredModel     String   @default("gemini-3-flash-preview")
   currentDayNumber   Int      @default(1)
   updatedAt          DateTime @updatedAt
 }
 
+// Nhật ký học Tiếng Anh riêng theo từng User
 model EnglishStudyLog {
   id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date               String
   dayNumber          Int      @default(1)
   level              String   @default("A1")
@@ -166,11 +276,16 @@ model EnglishStudyLog {
   score              Int?
   aiCoachingFeedback Json?
   createdAt          DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
-// Bảng lưu trữ bộ bài tập luyện viết
+// ==================== BỘ BÀI TẬP LUYỆN VIẾT RIÊNG THEO USER ====================
+
 model PracticeSet {
   id            String     @id @default(uuid())
+  userId        String
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   title         String     // Tiêu đề bài tập
   description   String?    // Mô tả ngắn nội dung bài tập
   vocabularyIds Json       // Danh sách ID từ vựng được chọn
@@ -178,13 +293,14 @@ model PracticeSet {
   questionCount Int        // Số lượng câu hỏi
   createdAt     DateTime   @default(now())
   questions     Question[] // Các câu hỏi thuộc bộ bài tập này
+
+  @@index([userId, createdAt])
 }
 
-// Bảng lưu trữ từng câu hỏi luyện viết
 model Question {
   id             String      @id @default(uuid())
   practiceSetId  String      // Mã bộ bài tập
-  practiceSet    PracticeSet @relation(fields: [practiceSetId], references: id, onDelete: Cascade)
+  practiceSet    PracticeSet @relation(fields: [practiceSetId], references: [id], onDelete: Cascade)
   vietnamese     String      // Câu tiếng Việt
   chinese        String      // Câu tiếng Trung chuẩn
   pinyin         String      // Pinyin của câu tiếng Trung

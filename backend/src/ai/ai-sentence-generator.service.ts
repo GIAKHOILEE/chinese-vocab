@@ -138,10 +138,12 @@ Return JSON strictly in this format:
             );
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err instanceof BadRequestException) {
+          throw err;
+        }
         console.warn(`[Lượt ${attempt}] Thất bại khi sinh câu hỏi từ AI:`, err.message);
         if (attempt < maxRetries) {
-          // Tạm dừng 3 giây trước khi thử lại để tránh bị giới hạn Rate Limit của Groq Cloud API
           await new Promise((resolve) => setTimeout(resolve, 3000));
         }
       }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { fetchApi } from '@/lib/api';
+import { GEMINI_MODELS, useGeminiConfig } from '@/components/GeminiProvider';
 import { speakChinese } from '@/lib/speech';
 import {
   Sparkles,
@@ -16,7 +17,6 @@ import {
   Clock,
   ArrowRight,
   AlertTriangle,
-  PlusCircle,
   Award,
 } from 'lucide-react';
 
@@ -48,6 +48,7 @@ interface GrammarItem {
 
 interface TodayPlan {
   profile: {
+    currentLevel: string;
     dailyMinutesTarget: number;
     newWordsPerDay: number;
     reviewWordsPerDay: number;
@@ -55,6 +56,7 @@ interface TodayPlan {
     preferredModel: string;
     currentDayNumber: number;
   };
+  activeLevel: string;
   schedule: {
     reviewMinutes: number;
     newWordsMinutes: number;
@@ -124,20 +126,18 @@ interface EvaluationResult {
   weakWordsDetected?: string[];
 }
 
-const GEMINI_MODELS = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Nhanh & Ổn định)' },
-  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Chấm sâu)' },
-  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
-];
+const HSK_LEVELS = ['HSK1', 'HSK2', 'HSK3'] as const;
+const HSK_LABELS: Record<string, string> = {
+  HSK1: 'HSK 1 (Cơ bản • 500 từ)',
+  HSK2: 'HSK 2 (Sơ cấp • 772 từ)',
+  HSK3: 'HSK 3 (Trung cấp • 973 từ)',
+};
 
 export default function StudyPage() {
+  const { model: selectedModel, setModel: setSelectedModel } = useGeminiConfig();
   const [plan, setPlan] = useState<TodayPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1);
-  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
-  const [syncing, setSyncing] = useState(false);
-  const [expanding, setExpanding] = useState(false);
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
 
   // Phase 1: SRS Review state
@@ -169,20 +169,36 @@ export default function StudyPage() {
   const [completingDay, setCompletingDay] = useState(false);
   const [dailyCoachResult, setDailyCoachResult] = useState<any>(null);
 
-  async function loadPlan(topic?: string) {
+  async function loadPlan(topic?: string, level?: string) {
     setLoading(true);
     try {
-      const qs = topic ? `?topic=${encodeURIComponent(topic)}` : '';
+      const params = new URLSearchParams();
+      if (topic) params.set('topic', topic);
+      if (level) params.set('level', level);
+      const qs = params.toString() ? `?${params.toString()}` : '';
       const data = await fetchApi<TodayPlan>(`/curriculum/today${qs}`);
       setPlan(data);
       setTopicDialogue(null);
-      if (data.profile?.preferredModel) {
-        setSelectedModel(data.profile.preferredModel);
-      }
     } catch (err: any) {
       setBannerMsg(err.message || 'Không thể tải lộ trình học hôm nay.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleLevelChange(level: string) {
+    try {
+      await fetchApi('/curriculum/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ currentLevel: level }),
+      });
+      setReviewIdx(0);
+      setLearnedNewIds(new Set());
+      setGrammarDoneIds(new Set());
+      setMixedData(null);
+      await loadPlan(undefined, level);
+    } catch (err: any) {
+      setBannerMsg(err.message);
     }
   }
 
@@ -197,6 +213,7 @@ export default function StudyPage() {
           newWordIds: plan.newWords.map((w) => w.id),
           oldWordIds: plan.reviewWords.map((w) => w.id),
           topic: plan.currentTopic,
+          level: plan.activeLevel,
           model: selectedModel,
         }),
       });
@@ -211,37 +228,6 @@ export default function StudyPage() {
   useEffect(() => {
     loadPlan();
   }, []);
-
-  async function handleSyncHsk2() {
-    setSyncing(true);
-    setBannerMsg(null);
-    try {
-      const res = await fetchApi<{ message: string }>('/curriculum/sync-hsk2', { method: 'POST' });
-      setBannerMsg(res.message);
-      await loadPlan();
-    } catch (err: any) {
-      setBannerMsg(err.message);
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  async function handleAiExpand() {
-    setExpanding(true);
-    setBannerMsg(null);
-    try {
-      const res = await fetchApi<{ addedCount: number }>('/curriculum/ai-expand-hsk2', {
-        method: 'POST',
-        body: JSON.stringify({ count: 25, model: selectedModel }),
-      });
-      setBannerMsg(`AI vừa bổ sung thêm ${res.addedCount} từ HSK 2 (3.0) mới vào kho từ vựng của bạn!`);
-      await loadPlan();
-    } catch (err: any) {
-      setBannerMsg(err.message);
-    } finally {
-      setExpanding(false);
-    }
-  }
 
   async function handleChangeTargetMinutes(minutes: number) {
     const newWordsPerDay = minutes <= 60 ? 10 : minutes <= 90 ? 15 : 20;
@@ -382,6 +368,7 @@ export default function StudyPage() {
           newWordIds: plan.newWords.map((w) => w.id),
           reviewWordIds: plan.reviewWords.map((w) => w.id),
           grammarIds: plan.grammarPoints.map((g) => g.id),
+          level: plan.activeLevel,
           model: selectedModel,
         }),
       });
@@ -449,7 +436,7 @@ export default function StudyPage() {
         results: Array<EvaluationResult & { key: string }>;
       }>('/curriculum/evaluate-batch', {
         method: 'POST',
-        body: JSON.stringify({ items, model: selectedModel }),
+        body: JSON.stringify({ items, level: plan?.activeLevel, model: selectedModel }),
       });
 
       const nextMap: Record<string, EvaluationResult> = {};
@@ -531,92 +518,90 @@ export default function StudyPage() {
   if (loading) {
     return (
       <div className="max-w-4xl mx-auto py-12">
-        <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
-          Đang chuẩn bị giáo trình HSK 2 (3.0) cá nhân hóa cho bạn...
+          <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
+            Đang chuẩn bị giáo trình HSK 1→3 (3.0) cá nhân hóa cho bạn...
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (!plan) return null;
+    if (!plan) return null;
 
-  const currentReviewWord = plan.reviewWords[reviewIdx];
+    const currentReviewWord = plan.reviewWords[reviewIdx];
 
-  return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-12">
-      {/* Header & Cấu hình cá nhân (Bento Top Card) */}
-      <div className="clay-card p-6 sm:p-7 space-y-5 relative overflow-hidden">
-        <div className="absolute -right-12 -top-12 w-44 h-44 rounded-full bg-peach-200/30 blur-2xl pointer-events-none" />
-        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-peach-100/90 border border-peach-200/70 text-peach-700 text-xs font-extrabold shadow-clay-sm mb-2.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Giáo trình HSK 2 (3.0) • Ngày thứ {plan.profile.currentDayNumber}</span>
+    return (
+      <div className="max-w-5xl mx-auto space-y-6 pb-12">
+        {/* Header & Cấu hình cá nhân (Bento Top Card) */}
+        <div className="clay-card p-6 sm:p-7 space-y-5 relative overflow-hidden">
+          <div className="absolute -right-12 -top-12 w-44 h-44 rounded-full bg-peach-200/30 blur-2xl pointer-events-none" />
+          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-peach-100/90 border border-peach-200/70 text-peach-700 text-xs font-extrabold shadow-clay-sm mb-2.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Giáo trình {plan.activeLevel} (HSK 3.0) • Ngày thứ {plan.profile.currentDayNumber}</span>
+              </div>
+              <h1 className="text-xl sm:text-2xl font-extrabold text-cocoa-900 tracking-tight">
+                {HSK_LABELS[plan.activeLevel] || plan.activeLevel} — Lộ trình {plan.profile.dailyMinutesTarget} phút/ngày
+              </h1>
+              <p className="text-sm text-cocoa-600 mt-1">
+                Kết hợp ôn từ cũ + học từ mới {plan.activeLevel} theo chủ đề + ngữ pháp + AI đánh giá cá nhân hóa.
+              </p>
             </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold text-cocoa-900 tracking-tight">
-              Lộ trình học hiểu & ôn tập sâu ({plan.profile.dailyMinutesTarget} phút/ngày)
-            </h1>
-            <p className="text-sm text-cocoa-600 mt-1">
-              Kết hợp từ cũ (HSK 1 & 2) + từ mới HSK 2 (3.0) + ngữ pháp + AI đánh giá cá nhân hóa.
-            </p>
           </div>
 
-          <div className="flex flex-wrap gap-2.5">
-            <button
-              onClick={handleSyncHsk2}
-              disabled={syncing}
-              className="clay-btn-sage inline-flex items-center gap-1.5 px-4 py-2.5 text-xs sm:text-sm"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              <span>{syncing ? 'Đang đồng bộ...' : 'Đồng bộ kho HSK 2 (3.0)'}</span>
-            </button>
-            <button
-              onClick={handleAiExpand}
-              disabled={expanding}
-              className="clay-btn-cream text-peach-700 border-peach-300/50 bg-peach-50/90 hover:bg-peach-100/80 inline-flex items-center gap-1.5 px-4 py-2.5 text-xs sm:text-sm"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>{expanding ? 'AI đang tìm từ...' : 'AI Bổ sung +25 từ HSK 2'}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Thanh cấu hình thời lượng & Gemini Model */}
-        <div className="relative pt-4 border-t border-cocoa-400/15 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Clock className="w-4 h-4 text-cocoa-400" />
-            <span className="text-cocoa-600 font-bold text-xs">Thời lượng hôm nay:</span>
-            {[60, 90, 120].map((m) => (
-              <button
-                key={m}
-                onClick={() => handleChangeTargetMinutes(m)}
-                className={`px-3.5 py-1.5 rounded-[14px] text-xs font-extrabold transition ${
-                  plan.profile.dailyMinutesTarget === m
-                    ? 'clay-btn-peach'
-                    : 'bg-linen-200/80 text-cocoa-600 hover:bg-linen-300/80'
-                }`}
-              >
-                {m} phút
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Brain className="w-4 h-4 text-peach-600" />
-            <span className="text-cocoa-600 text-xs font-bold">Gemini Model:</span>
-            <select
-              value={selectedModel}
-              onChange={(e) => handleModelChange(e.target.value)}
-              className="clay-input px-3 py-1.5 text-xs font-semibold"
-            >
-              {GEMINI_MODELS.map((m) => (
-                <option key={m.value} value={m.value}>
-                  {m.label}
-                </option>
+          {/* Thanh chọn cấp độ HSK1-HSK3, thời lượng & Gemini Model */}
+          <div className="relative pt-4 border-t border-cocoa-400/15 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-sm">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-cocoa-600 font-extrabold text-xs mr-1">Cấp độ:</span>
+              {HSK_LEVELS.map((lv) => (
+                <button
+                  key={lv}
+                  onClick={() => handleLevelChange(lv)}
+                  className={`px-3.5 py-1.5 rounded-[14px] text-xs font-extrabold transition ${
+                    plan.activeLevel === lv
+                      ? 'clay-btn-peach'
+                      : 'bg-linen-200/80 text-cocoa-600 hover:bg-linen-300/80'
+                  }`}
+                >
+                  {lv}
+                </button>
               ))}
-            </select>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <Clock className="w-4 h-4 text-cocoa-400" />
+              <span className="text-cocoa-600 font-bold text-xs">Thời lượng:</span>
+              {[60, 90, 120].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => handleChangeTargetMinutes(m)}
+                  className={`px-3.5 py-1.5 rounded-[14px] text-xs font-extrabold transition ${
+                    plan.profile.dailyMinutesTarget === m
+                      ? 'clay-btn-peach'
+                      : 'bg-linen-200/80 text-cocoa-600 hover:bg-linen-300/80'
+                  }`}
+                >
+                  {m}p
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Brain className="w-4 h-4 text-peach-600" />
+              <span className="text-cocoa-600 text-xs font-bold">Model:</span>
+              <select
+                value={selectedModel}
+                onChange={(e) => handleModelChange(e.target.value)}
+                className="clay-input px-3 py-1.5 text-xs font-semibold"
+              >
+                {GEMINI_MODELS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-        </div>
 
         {bannerMsg && (
           <div className="relative p-3.5 rounded-[20px] bg-peach-100/80 border border-peach-300/50 text-peach-800 text-sm font-bold shadow-clay-sm">
@@ -636,7 +621,7 @@ export default function StudyPage() {
           },
           {
             step: 2 as const,
-            title: 'Chặng 2: Từ mới HSK 2',
+            title: `Chặng 2: Từ mới ${plan.activeLevel}`,
             sub: `${learnedNewIds.size}/${plan.newWords.length} từ • ~${plan.schedule.newWordsMinutes}p`,
             icon: BookOpen,
           },
@@ -691,7 +676,7 @@ export default function StudyPage() {
 
           {plan.reviewWords.length === 0 ? (
             <div className="clay-inset text-center py-10 px-4 text-cocoa-500 font-semibold">
-              Chưa có từ cũ nào trong kho. Hãy bấm &quot;Đồng bộ kho HSK 2 (3.0)&quot; ở trên!
+              Chưa có từ cũ nào đến hạn ôn tập hôm nay. Hãy học từ mới ở Chặng 2 để bắt đầu lịch SRS!
             </div>
           ) : currentReviewWord ? (
             <div className="max-w-xl mx-auto clay-card-oat p-6 sm:p-8 space-y-5 text-center">
@@ -836,21 +821,21 @@ export default function StudyPage() {
               onClick={() => setActivePhase(2)}
               className="clay-btn-dark inline-flex items-center gap-2 px-5 py-3 text-sm"
             >
-              <span>Sang Chặng 2: Học từ mới HSK 2</span>
+              <span>Sang Chặng 2: Học từ mới {plan.activeLevel}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
       )}
 
-      {/* CHẶNG 2: HỌC HIỂU TỪ MỚI HSK 2 (3.0) */}
+      {/* CHẶNG 2: HỌC HIỂU TỪ MỚI */}
       {activePhase === 2 && (
         <div className="space-y-5">
           <div className="clay-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h2 className="text-lg font-extrabold text-cocoa-900">
-                  Chặng 2: Học hiểu {plan.newWords.length} từ mới HSK 2 (3.0) theo chủ đề
+                  Chặng 2: Học hiểu {plan.newWords.length} từ mới {plan.activeLevel} (3.0) theo chủ đề
                 </h2>
                 {plan.currentTopic && (
                   <span className="px-3 py-1 rounded-full bg-peach-100 text-peach-700 border border-peach-200/70 text-xs font-extrabold">
@@ -867,7 +852,7 @@ export default function StudyPage() {
               {plan.availableTopics && plan.availableTopics.length > 0 && (
                 <select
                   value={plan.currentTopic || ''}
-                  onChange={(e) => loadPlan(e.target.value)}
+                  onChange={(e) => loadPlan(e.target.value, plan.activeLevel)}
                   className="clay-input px-3.5 py-2.5 text-xs font-bold"
                 >
                   {plan.availableTopics.map((t) => (
@@ -1016,7 +1001,7 @@ export default function StudyPage() {
 
           {plan.newWords.length === 0 ? (
             <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
-              Bạn đã học hết các từ HSK 2 hiện có ở trạng thái mới! Hãy bấm &quot;Đồng bộ kho HSK 2 (3.0)&quot; hoặc &quot;AI Bổ sung +25 từ HSK 2&quot; ở trên.
+              Bạn đã hoàn thành tất cả từ mới {plan.activeLevel}! Hãy chuyển sang cấp độ tiếp theo ở thanh chọn cấp độ bên trên.
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1134,7 +1119,7 @@ export default function StudyPage() {
           <div className="clay-card p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-lg font-extrabold text-cocoa-900">
-                Chặng 3: Ngữ pháp trọng tâm HSK 2 (3.0) hôm nay
+                Chặng 3: Ngữ pháp trọng tâm {plan.activeLevel} (3.0) hôm nay
               </h2>
               <p className="text-xs text-cocoa-500 mt-1">
                 Đọc kỹ công thức, lưu ý lỗi sai thường gặp để áp dụng ngay ở Chặng 4.

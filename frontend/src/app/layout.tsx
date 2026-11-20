@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
 import Navigation from '@/components/Navigation';
+import { AuthProvider } from '@/components/AuthProvider';
+import { GeminiProvider } from '@/components/GeminiProvider';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Chinese Writing Practice - Web App Học Viết Tiếng Trung Cá Nhân',
-  description: 'Ứng dụng tạo bài tập luyện viết chữ Hán cá nhân với AI Google Gemini',
+  title: 'Chinese & English Studio - Lộ trình HSK 1→3 & CEFR A1→B2',
+  description: 'Ứng dụng học từ vựng, ngữ pháp và luyện viết đa người dùng với AI Google Gemini',
 };
 
 export default function RootLayout({
@@ -23,10 +25,14 @@ export default function RootLayout({
         />
       </head>
       <body className="text-cocoa-800 flex flex-col min-h-screen selection:bg-peach-200/70 selection:text-cocoa-900">
-        <Navigation />
-        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 md:px-8 py-6 sm:py-8">
-          {children}
-        </main>
+        <AuthProvider>
+          <GeminiProvider>
+            <Navigation />
+            <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 md:px-8 py-6 sm:py-8">
+              {children}
+            </main>
+          </GeminiProvider>
+        </AuthProvider>
       </body>
     </html>
   );

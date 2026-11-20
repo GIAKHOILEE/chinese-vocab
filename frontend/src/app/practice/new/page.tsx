@@ -43,13 +43,13 @@ export default function NewPracticePage() {
   const [generating, setGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Tải danh sách từ vựng
+  // Tải danh sách từ vựng (chọn sẵn 30 từ đầu tiên để tránh quá tải prompt)
   useEffect(() => {
     async function loadVocabularies() {
       try {
         const data = await fetchApi<Vocabulary[]>('/vocabulary');
         setVocabularies(data);
-        setSelectedIds(new Set(data.map((v) => v.id)));
+        setSelectedIds(new Set(data.slice(0, 30).map((v) => v.id)));
       } catch (err: any) {
         setErrorMsg('Không thể tải từ vựng từ server.');
       } finally {
@@ -69,9 +69,18 @@ export default function NewPracticePage() {
     return matchSearch && matchLevel;
   });
 
-  // Chọn / Bỏ chọn tất cả
+  // Chọn tất cả trong danh sách đang lọc
   const handleSelectAll = () => {
-    setSelectedIds(new Set(vocabularies.map((v) => v.id)));
+    setSelectedIds(new Set(filteredVocabularies.map((v) => v.id)));
+  };
+
+  const handleSelectRandom30 = () => {
+    const pool = [...filteredVocabularies];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    setSelectedIds(new Set(pool.slice(0, 30).map((v) => v.id)));
   };
 
   const handleDeselectAll = () => {
@@ -173,20 +182,27 @@ export default function NewPracticePage() {
               </span>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleSelectRandom30}
+                className="text-xs text-sage-700 hover:bg-sage-200/60 font-bold px-3 py-1.5 bg-sage-100/90 rounded-[14px] transition"
+              >
+                Random 30 từ
+              </button>
               <button
                 type="button"
                 onClick={handleSelectAll}
                 className="text-xs text-peach-700 hover:bg-peach-200/60 font-bold px-3 py-1.5 bg-peach-100/90 rounded-[14px] transition"
               >
-                Select all
+                Chọn theo bộ lọc ({filteredVocabularies.length})
               </button>
               <button
                 type="button"
                 onClick={handleDeselectAll}
                 className="text-xs text-cocoa-600 hover:bg-linen-300/80 font-bold px-3 py-1.5 bg-linen-200/90 rounded-[14px] transition"
               >
-                Deselect all
+                Bỏ chọn
               </button>
             </div>
           </div>

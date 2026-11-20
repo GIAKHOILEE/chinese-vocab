@@ -5,14 +5,22 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Bật CORS để hỗ trợ frontend gọi API từ cổng khác (ví dụ: localhost:3001)
+  const rawCors = process.env.CORS_ORIGIN?.trim();
+  const origin =
+    !rawCors || rawCors === '*'
+      ? '*'
+      : rawCors
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean);
+
   app.enableCors({
-    origin: '*',
+    origin,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Gemini-Api-Key', 'X-Gemini-Model'],
     credentials: true,
   });
 
-  // Kích hoạt ValidationPipe toàn cục để tự động kiểm tra dữ liệu đầu vào DTO
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

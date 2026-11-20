@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
+import { GEMINI_MODELS, useGeminiConfig } from '@/components/GeminiProvider';
 import { speakEnglish } from '@/lib/speech';
 import {
   Sparkles,
@@ -17,7 +18,6 @@ import {
   Clock,
   ArrowRight,
   AlertTriangle,
-  PlusCircle,
   Award,
   ClipboardCheck,
 } from 'lucide-react';
@@ -80,19 +80,11 @@ const LEVEL_LABELS: Record<string, string> = {
   B2: 'B2 (Trung cao cấp)',
 };
 
-const GEMINI_MODELS = [
-  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Nhanh)' },
-  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
-  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Chấm sâu)' },
-  { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
-];
-
 export default function EnglishStudyPage() {
+  const { model: selectedModel, setModel: setSelectedModel } = useGeminiConfig();
   const [plan, setPlan] = useState<EnglishTodayPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1);
-  const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash');
-  const [expanding, setExpanding] = useState(false);
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
 
   // Phase 1
@@ -134,7 +126,6 @@ export default function EnglishStudyPage() {
       const data = await fetchApi<EnglishTodayPlan>(`/english/today${qs}`);
       setPlan(data);
       setDialogue(null);
-      if (data.profile?.preferredModel) setSelectedModel(data.profile.preferredModel);
     } catch (err: any) {
       setBannerMsg(err.message || 'Không thể tải lộ trình tiếng Anh.');
     } finally {
@@ -169,24 +160,6 @@ export default function EnglishStudyPage() {
       await loadPlan();
     } catch (err: any) {
       setBannerMsg(err.message);
-    }
-  }
-
-  async function handleAiExpand() {
-    if (!plan) return;
-    setExpanding(true);
-    setBannerMsg(null);
-    try {
-      const res = await fetchApi<{ addedCount: number; level: string }>('/english/ai-expand', {
-        method: 'POST',
-        body: JSON.stringify({ cefrLevel: plan.activeLevel, count: 20, model: selectedModel }),
-      });
-      setBannerMsg(`AI đã bổ sung +${res.addedCount} từ tiếng Anh trình độ ${res.level}!`);
-      await loadPlan(undefined, plan.activeLevel);
-    } catch (err: any) {
-      setBannerMsg(err.message);
-    } finally {
-      setExpanding(false);
     }
   }
 
@@ -461,17 +434,6 @@ export default function EnglishStudyPage() {
             <p className="text-sm text-cocoa-600 mt-1">
               Đi từ nền tảng A1 đến giao tiếp & viết tự tin ở B1–B2. Kết hợp từ cũ + từ mới theo chủ đề + ngữ pháp + AI chấm bài.
             </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleAiExpand}
-              disabled={expanding}
-              className="clay-btn-sage inline-flex items-center gap-1.5 px-4 py-2.5 text-xs sm:text-sm"
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>{expanding ? 'AI đang tạo từ...' : `AI Bổ sung +20 từ ${plan.activeLevel}`}</span>
-            </button>
           </div>
         </div>
 
@@ -800,7 +762,7 @@ export default function EnglishStudyPage() {
 
           {plan.newWords.length === 0 ? (
             <div className="clay-card p-10 text-center text-cocoa-500 text-sm font-semibold">
-              Bạn đã học hết từ mới ở bậc {plan.activeLevel}! Hãy bấm &quot;AI Bổ sung +20 từ {plan.activeLevel}&quot; ở trên hoặc nâng cấp độ lên bậc tiếp theo.
+              Bạn đã hoàn thành toàn bộ từ mới ở bậc {plan.activeLevel}! Hãy chuyển trình độ sang bậc tiếp theo ở thanh trên.
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
