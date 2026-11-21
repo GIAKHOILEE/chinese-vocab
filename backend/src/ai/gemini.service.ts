@@ -7,7 +7,7 @@ export class GeminiService {
   private readonly defaultModel = 'gemini-3-flash-preview';
 
   /**
-   * Gửi prompt tới Google Gemini Cloud API sử dụng API Key của người dùng gửi theo request
+   * Gửi prompt tới Google Gemini Cloud API sử dụng API Key của người dùng gửi qua header bảo mật
    */
   async generateText(
     prompt: string,
@@ -27,6 +27,12 @@ export class GeminiService {
       );
     }
 
+    if (apiKey.length < 20 || apiKey.length > 200 || /[\r\n\s]/.test(apiKey)) {
+      throw new BadRequestException(
+        'Định dạng Gemini API Key không hợp lệ. Vui lòng kiểm tra lại key lấy từ Google AI Studio.',
+      );
+    }
+
     const requestedModel = (options?.model || ctx?.model || this.defaultModel).trim();
     const candidateModels = Array.from(
       new Set([
@@ -34,7 +40,6 @@ export class GeminiService {
         'gemini-3-flash-preview',
         'gemini-3.1-flash-lite-preview',
         'gemini-flash-latest',
-        'gemini-3.8-flash',
         'gemini-3.1-pro-preview',
       ]),
     );
@@ -48,7 +53,8 @@ export class GeminiService {
 
     for (const model of candidateModels) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const safeModel = encodeURIComponent(model);
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${safeModel}:generateContent`;
 
         const response = await axios.post(
           url,
@@ -68,7 +74,10 @@ export class GeminiService {
             },
           },
           {
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
             timeout: 60000,
           },
         );
@@ -111,17 +120,17 @@ export class GeminiService {
       }
 
       if (status === 429 || String(errorMsg).includes('RESOURCE_EXHAUSTED')) {
-        console.warn('Google Gemini API Rate limit:', errorMsg);
+        console.warn('Google Gemini API Rate limit');
         throw new BadRequestException(
           'Gemini API Key của bạn đang tạm thời chạm giới hạn (Rate Limit). Vui lòng đợi vài giây rồi thử lại.',
         );
       }
 
-      console.error(`Lỗi Google Gemini API (${status}):`, errorMsg);
-      throw new InternalServerErrorException(`Lỗi Google Gemini API: ${errorMsg}`);
+      console.error(`Lỗi Google Gemini API (${status})`);
+      throw new InternalServerErrorException(`Lỗi Google Gemini API (${status}). Vui lòng thử lại sau.`);
     }
 
-    console.error('Lỗi khi kết nối Google Gemini API:', error?.message);
+    console.error('Lỗi khi kết nối Google Gemini API:', error?.code || 'NETWORK_ERROR');
     throw new InternalServerErrorException('Không thể kết nối tới dịch vụ Google Gemini Cloud AI.');
   }
 }

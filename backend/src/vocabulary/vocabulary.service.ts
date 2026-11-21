@@ -36,15 +36,21 @@ export class VocabularyService {
   }
 
   /**
-   * Lấy danh sách từ vựng hiển thị cho user (kho chung + từ cá nhân)
+   * Lấy danh sách từ vựng hiển thị cho user (hỗ trợ phân trang, chế độ nhẹ và random cho game)
    */
-  async findAll(userId: string, search?: string, level?: string, partOfSpeech?: string) {
+  async findAll(
+    userId: string,
+    search?: string,
+    level?: string,
+    partOfSpeech?: string,
+    opts?: { page?: number; limit?: number; lite?: boolean; random?: boolean },
+  ) {
     const andFilters: any[] = [
       { OR: [{ ownerId: null }, { ownerId: userId }] },
     ];
 
     if (search && search.trim()) {
-      const query = search.trim();
+      const query = search.trim().slice(0, 100);
       andFilters.push({
         OR: [
           { word: { contains: query, mode: 'insensitive' } },
@@ -62,8 +68,64 @@ export class VocabularyService {
       andFilters.push({ partOfSpeech: partOfSpeech === 'UNSET' ? '' : partOfSpeech.trim() });
     }
 
+    const where = { AND: andFilters };
+    const liteSelect = opts?.lite
+      ? {
+          id: true,
+          word: true,
+          meaning: true,
+          pinyin: true,
+          partOfSpeech: true,
+          level: true,
+        }
+      : undefined;
+
+    if (opts?.random && opts?.limit) {
+      const idRows = await this.prisma.vocabulary.findMany({
+        where,
+        select: { id: true },
+      });
+      const ids = idRows.map((r) => r.id);
+      for (let i = ids.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ids[i], ids[j]] = [ids[j], ids[i]];
+      }
+      const picked = ids.slice(0, opts.limit);
+      if (picked.length === 0) return [];
+      return this.prisma.vocabulary.findMany({
+        where: { id: { in: picked } },
+        ...(liteSelect ? { select: liteSelect } : {}),
+      });
+    }
+
+    if (opts?.page !== undefined || opts?.limit !== undefined) {
+      const page = opts?.page ?? 1;
+      const limit = opts?.limit ?? 50;
+      const skip = (page - 1) * limit;
+
+      const [items, total] = await Promise.all([
+        this.prisma.vocabulary.findMany({
+          where,
+          ...(liteSelect ? { select: liteSelect } : {}),
+          orderBy: [{ createdAt: 'desc' }],
+          skip,
+          take: limit,
+        }),
+        this.prisma.vocabulary.count({ where }),
+      ]);
+
+      return {
+        items,
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      };
+    }
+
     return this.prisma.vocabulary.findMany({
-      where: { AND: andFilters },
+      where,
+      ...(liteSelect ? { select: liteSelect } : {}),
       orderBy: [{ createdAt: 'desc' }],
     });
   }
@@ -284,11 +346,17 @@ export class VocabularyService {
    * Import CSV
    */
   async importCsv(userId: string, csvContent: string) {
+    if (!csvContent || !csvContent.trim()) {
+      throw new BadRequestException('Nội dung CSV không được để trống.');
+    }
     const records = parse(csvContent, {
       columns: true,
       skip_empty_lines: true,
       trim: true,
     });
+    if (records.length > 2000) {
+      throw new BadRequestException('File CSV vượt quá giới hạn tối đa 2.000 dòng mỗi lần import.');
+    }
 
     const parsedItems: {
       ownerId: string;

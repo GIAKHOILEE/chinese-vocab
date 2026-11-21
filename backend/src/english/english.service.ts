@@ -32,6 +32,7 @@ const PLACEMENT_QUESTIONS: PlacementQuestion[] = [
 @Injectable()
 export class EnglishService {
   private seedingPromise: Promise<void> | null = null;
+  private isSeeded = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -79,9 +80,18 @@ export class EnglishService {
     },
   ) {
     await this.getOrCreateProfile(userId);
+    const cleanData: Record<string, any> = {};
+    if (data.currentLevel !== undefined && LEVEL_ORDER.includes(data.currentLevel as any)) {
+      cleanData.currentLevel = data.currentLevel;
+    }
+    if (data.dailyMinutesTarget !== undefined) cleanData.dailyMinutesTarget = data.dailyMinutesTarget;
+    if (data.newWordsPerDay !== undefined) cleanData.newWordsPerDay = data.newWordsPerDay;
+    if (data.reviewWordsPerDay !== undefined) cleanData.reviewWordsPerDay = data.reviewWordsPerDay;
+    if (data.grammarPerDay !== undefined) cleanData.grammarPerDay = data.grammarPerDay;
+    if (data.preferredModel !== undefined) cleanData.preferredModel = data.preferredModel.trim();
     return this.prisma.englishProfile.update({
       where: { userId },
-      data,
+      data: cleanData,
     });
   }
 
@@ -136,22 +146,24 @@ export class EnglishService {
     const existingGrammarTitles = new Set(
       (await this.prisma.englishGrammar.findMany({ select: { title: true } })).map((g) => g.title),
     );
+    const grammarToInsert = ENGLISH_GRAMMAR_DATA
+      .filter((g) => !existingGrammarTitles.has(g.title))
+      .map((g) => ({
+        cefrLevel: g.cefrLevel,
+        orderIndex: g.orderIndex,
+        title: g.title,
+        pattern: g.pattern,
+        explanation: g.explanation,
+        commonMistakes: g.commonMistakes,
+        examples: g.examples,
+      }));
     let addedGrammar = 0;
-    for (const g of ENGLISH_GRAMMAR_DATA) {
-      if (existingGrammarTitles.has(g.title)) continue;
-      await this.prisma.englishGrammar.create({
-        data: {
-          cefrLevel: g.cefrLevel,
-          orderIndex: g.orderIndex,
-          title: g.title,
-          pattern: g.pattern,
-          explanation: g.explanation,
-          commonMistakes: g.commonMistakes,
-          examples: g.examples,
-        },
+    if (grammarToInsert.length > 0) {
+      const res = await this.prisma.englishGrammar.createMany({
+        data: grammarToInsert,
+        skipDuplicates: true,
       });
-      existingGrammarTitles.add(g.title);
-      addedGrammar++;
+      addedGrammar = res.count;
     }
 
     return {
@@ -162,6 +174,7 @@ export class EnglishService {
   }
 
   async ensureSeeded(): Promise<void> {
+    if (this.isSeeded) return;
     if (this.seedingPromise) return this.seedingPromise;
 
     this.seedingPromise = (async () => {
@@ -173,6 +186,7 @@ export class EnglishService {
         if (vocabCount < ENGLISH_VOCAB_DATA.length || grammarCount < ENGLISH_GRAMMAR_DATA.length) {
           await this.syncCurriculum();
         }
+        this.isSeeded = true;
       } finally {
         this.seedingPromise = null;
       }
@@ -370,7 +384,7 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
     const now = new Date();
     const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
 
-    // 1. Chặng 1: Ôn từ cũ đến hạn SRS của user
+    // 1. Chặng 1: Ôn từ cũ đến hạn SRS của user (chỉ lấy trường cần thiết, tránh kéo JSON aiDeepDive)
     const dueProgresses = await this.prisma.englishVocabProgress.findMany({
       where: {
         userId,
@@ -378,7 +392,13 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
         nextReviewAt: { lte: now },
         englishVocab: visibleFilter,
       },
-      include: { englishVocab: true },
+      select: {
+        status: true,
+        srsLevel: true,
+        wrongCount: true,
+        lastMistakeNote: true,
+        englishVocab: true,
+      },
       orderBy: [{ wrongCount: 'desc' }, { nextReviewAt: 'asc' }],
       take: profile.reviewWordsPerDay,
     });
@@ -400,7 +420,13 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
           status: { not: 'new' },
           englishVocab: visibleFilter,
         },
-        include: { englishVocab: true },
+        select: {
+          status: true,
+          srsLevel: true,
+          wrongCount: true,
+          lastMistakeNote: true,
+          englishVocab: true,
+        },
         orderBy: { lastReviewedAt: 'asc' },
         take: profile.reviewWordsPerDay - reviewWords.length,
       });
@@ -416,8 +442,8 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
       ];
     }
 
-    // 2. Chặng 2: Gom từ mới ở trình độ activeLevel mà user chưa học
-    const allNewAtLevel = await this.prisma.englishVocab.findMany({
+    // 2. Chặng 2: Chỉ select { id, topic } để gom chủ đề, sau đó query đầy đủ đúng số từ hôm nay
+    const unlearnedLight = await this.prisma.englishVocab.findMany({
       where: {
         ...visibleFilter,
         cefrLevel: activeLevel,
@@ -430,20 +456,23 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
           },
         },
       },
+      select: { id: true, topic: true },
       orderBy: { createdAt: 'asc' },
     });
 
-    const topicGroups = new Map<string, typeof allNewAtLevel>();
-    for (const w of allNewAtLevel) {
+    const topicGroups = new Map<string, string[]>();
+    const allUnlearnedIds: string[] = [];
+    for (const w of unlearnedLight) {
+      allUnlearnedIds.push(w.id);
       const topic = w.topic?.trim() || 'Daily Life & Greetings';
       const arr = topicGroups.get(topic) || [];
-      arr.push(w);
+      arr.push(w.id);
       topicGroups.set(topic, arr);
     }
 
-    const availableTopics = Array.from(topicGroups.entries()).map(([topic, words]) => ({
+    const availableTopics = Array.from(topicGroups.entries()).map(([topic, ids]) => ({
       topic,
-      remainingCount: words.length,
+      remainingCount: ids.length,
     }));
 
     const selectedTopic =
@@ -451,14 +480,25 @@ Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đ�
         ? requestedTopic
         : availableTopics[0]?.topic || 'Daily Life & Greetings';
 
-    let newWords = (topicGroups.get(selectedTopic) || []).slice(0, profile.newWordsPerDay);
-    if (newWords.length < profile.newWordsPerDay && allNewAtLevel.length > newWords.length) {
-      const ids = new Set(newWords.map((w) => w.id));
-      const extras = allNewAtLevel
-        .filter((w) => !ids.has(w.id))
-        .slice(0, profile.newWordsPerDay - newWords.length);
-      newWords = [...newWords, ...extras];
+    let pickedNewIds = (topicGroups.get(selectedTopic) || []).slice(0, profile.newWordsPerDay);
+    if (pickedNewIds.length < profile.newWordsPerDay && allUnlearnedIds.length > pickedNewIds.length) {
+      const pickedSet = new Set(pickedNewIds);
+      const extras = allUnlearnedIds
+        .filter((id) => !pickedSet.has(id))
+        .slice(0, profile.newWordsPerDay - pickedNewIds.length);
+      pickedNewIds = [...pickedNewIds, ...extras];
     }
+
+    const selectedRows =
+      pickedNewIds.length > 0
+        ? await this.prisma.englishVocab.findMany({
+            where: { id: { in: pickedNewIds } },
+          })
+        : [];
+    const selectedById = new Map(selectedRows.map((w) => [w.id, w]));
+    const newWords = pickedNewIds
+      .map((id) => selectedById.get(id))
+      .filter((w): w is NonNullable<typeof w> => Boolean(w));
 
     // 3. Chặng 3: Ngữ pháp theo cấp độ & tiến độ của user
     const levelGrammars = await this.prisma.englishGrammar.findMany({
@@ -884,7 +924,11 @@ Trả về STRICT JSON: { "headline": "...", "strengths": "...", "areasToImprove
     return log;
   }
 
-  async getVocabList(userId: string, level?: string) {
+  async getVocabList(
+    userId: string,
+    level?: string,
+    opts?: { lite?: boolean; random?: boolean; limit?: number },
+  ) {
     await this.ensureSeeded();
     const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
     const where =
@@ -892,10 +936,56 @@ Trả về STRICT JSON: { "headline": "...", "strengths": "...", "areasToImprove
         ? { ...visibleFilter, cefrLevel: level }
         : visibleFilter;
 
+    if (opts?.lite) {
+      if (opts.random && opts.limit) {
+        const idRows = await this.prisma.englishVocab.findMany({
+          where,
+          select: { id: true },
+        });
+        const ids = idRows.map((r) => r.id);
+        for (let i = ids.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [ids[i], ids[j]] = [ids[j], ids[i]];
+        }
+        const picked = ids.slice(0, opts.limit);
+        if (picked.length === 0) return [];
+        return this.prisma.englishVocab.findMany({
+          where: { id: { in: picked } },
+          select: {
+            id: true,
+            word: true,
+            ipa: true,
+            meaning: true,
+            partOfSpeech: true,
+            cefrLevel: true,
+            topic: true,
+          },
+        });
+      }
+
+      return this.prisma.englishVocab.findMany({
+        where,
+        select: {
+          id: true,
+          word: true,
+          ipa: true,
+          meaning: true,
+          partOfSpeech: true,
+          cefrLevel: true,
+          topic: true,
+          exampleEn: true,
+          exampleVi: true,
+        },
+        orderBy: { createdAt: 'asc' },
+        ...(opts.limit ? { take: opts.limit } : {}),
+      });
+    }
+
     const words = await this.prisma.englishVocab.findMany({
       where,
-      include: { progresses: { where: { userId } } },
+      include: { progresses: { where: { userId }, select: { status: true, srsLevel: true } } },
       orderBy: { createdAt: 'asc' },
+      ...(opts?.limit ? { take: opts.limit } : {}),
     });
 
     return words.map((w) => ({

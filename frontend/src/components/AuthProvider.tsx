@@ -2,7 +2,13 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { clearAuthToken, fetchApi, getAuthToken, setAuthToken } from '@/lib/api';
+import {
+  clearAuthToken,
+  fetchApi,
+  getAuthToken,
+  setAuthToken,
+  setRuntimeGeminiKey,
+} from '@/lib/api';
 
 export interface UserAccount {
   id: string;
@@ -11,6 +17,7 @@ export interface UserAccount {
   displayName: string;
   role: string;
   createdAt?: string;
+  lastLoginAt?: string | null;
 }
 
 interface AuthContextValue {
@@ -60,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handleUnauthorized = () => {
+      setRuntimeGeminiKey('');
       setUser(null);
       if (pathname !== '/login') {
         router.replace('/login');
@@ -105,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     clearAuthToken();
+    setRuntimeGeminiKey('');
     setUser(null);
     router.replace('/login');
   }, [router]);

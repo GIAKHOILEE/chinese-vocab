@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchApi } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import {
@@ -15,6 +15,8 @@ import {
   Filter,
   Volume2,
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { speakChinese } from '@/lib/speech';
 
@@ -50,8 +52,13 @@ export default function VocabularyPage() {
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
   const [partOfSpeechFilter, setPartOfSpeechFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const PAGE_SIZE = 50;
 
   // Trạng thái Modals / Forms
   const [activeTab, setActiveTab] = useState<'list' | 'single' | 'bulk' | 'csv'>('list');
@@ -87,29 +94,57 @@ export default function VocabularyPage() {
     level: 'HSK1',
   });
 
-  // Load danh sách từ vựng
-  const loadVocabularies = async () => {
-    setLoading(true);
-    try {
-      const queryParams = new URLSearchParams();
-      if (search) queryParams.append('search', search);
-      if (levelFilter && levelFilter !== 'ALL') queryParams.append('level', levelFilter);
-      if (partOfSpeechFilter && partOfSpeechFilter !== 'ALL') {
-        queryParams.append('partOfSpeech', partOfSpeechFilter);
-      }
+  // Debounce tìm kiếm 300ms để tránh spam API mỗi lần gõ phím
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-      const data = await fetchApi<Vocabulary[]>(`/vocabulary?${queryParams.toString()}`);
-      setVocabularies(data);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Không thể tải danh sách từ vựng');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Load danh sách từ vựng có phân trang phía server
+  const loadVocabularies = useCallback(
+    async (signal?: AbortSignal) => {
+      setLoading(true);
+      try {
+        const queryParams = new URLSearchParams({
+          page: String(page),
+          limit: String(PAGE_SIZE),
+        });
+        if (debouncedSearch.trim()) queryParams.append('search', debouncedSearch.trim());
+        if (levelFilter && levelFilter !== 'ALL') queryParams.append('level', levelFilter);
+        if (partOfSpeechFilter && partOfSpeechFilter !== 'ALL') {
+          queryParams.append('partOfSpeech', partOfSpeechFilter);
+        }
+
+        const data = await fetchApi<{
+          items: Vocabulary[];
+          total: number;
+          page: number;
+          totalPages: number;
+        }>(`/vocabulary?${queryParams.toString()}`, signal ? { signal } : undefined);
+        setVocabularies(data.items || []);
+        setTotal(data.total ?? 0);
+        setTotalPages(data.totalPages ?? 1);
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') {
+          setErrorMsg(err.message || 'Không thể tải danh sách từ vựng');
+        }
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [debouncedSearch, levelFilter, partOfSpeechFilter, page],
+  );
 
   useEffect(() => {
-    loadVocabularies();
-  }, [search, levelFilter, partOfSpeechFilter]);
+    const controller = new AbortController();
+    loadVocabularies(controller.signal);
+    return () => controller.abort();
+  }, [loadVocabularies]);
 
   // Xử lý xem preview Paste nhiều từ
   useEffect(() => {
@@ -190,6 +225,7 @@ export default function VocabularyPage() {
     try {
       await fetchApi(`/vocabulary/${id}`, { method: 'DELETE' });
       setVocabularies((prev) => prev.filter((v) => v.id !== id));
+      setTotal((t) => Math.max(0, t - 1));
       setSuccessMsg(`Đã xóa từ "${word}"`);
     } catch (err: any) {
       setErrorMsg(err.message || 'Không thể xóa từ vựng');
@@ -528,15 +564,28 @@ export default function VocabularyPage() {
               placeholder="Tìm kiếm từ tiếng Trung hoặc nghĩa..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full clay-input pl-10 pr-4 py-2.5 text-sm"
+              className="w-full clay-input pl-10 pr-9 py-2.5 text-sm"
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                title="Xóa tìm kiếm"
+                className="absolute right-2.5 top-2.5 p-1 text-cocoa-400 hover:text-cocoa-700 rounded-full"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
             <Filter className="w-4 h-4 text-cocoa-400" />
             <select
               value={partOfSpeechFilter}
-              onChange={(e) => setPartOfSpeechFilter(e.target.value)}
+              onChange={(e) => {
+                setPartOfSpeechFilter(e.target.value);
+                setPage(1);
+              }}
               className="clay-input px-3.5 py-2.5 text-sm"
             >
               <option value="ALL">Tất cả từ loại</option>
@@ -549,7 +598,10 @@ export default function VocabularyPage() {
             </select>
             <select
               value={levelFilter}
-              onChange={(e) => setLevelFilter(e.target.value)}
+              onChange={(e) => {
+                setLevelFilter(e.target.value);
+                setPage(1);
+              }}
               className="clay-input px-3.5 py-2.5 text-sm"
             >
               <option value="ALL">Tất cả cấp độ</option>
@@ -730,6 +782,33 @@ export default function VocabularyPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Phân trang Server-side */}
+        <div className="px-5 sm:px-6 py-4 border-t border-cocoa-400/15 bg-linen-100/60 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-bold text-cocoa-600">
+          <div>
+            Hiển thị {vocabularies.length} / <span className="text-cocoa-900 font-extrabold">{total}</span> từ vựng • Trang {page} / {totalPages}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+              className="clay-btn-cream inline-flex items-center gap-1 px-3.5 py-2 text-xs disabled:opacity-45"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>Trang trước</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages || loading}
+              className="clay-btn-cream inline-flex items-center gap-1 px-3.5 py-2 text-xs disabled:opacity-45"
+            >
+              <span>Trang sau</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

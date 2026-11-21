@@ -7,6 +7,9 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto, RegisterDto, UpdateProfileAccountDto } from './dto/auth.dto';
+import { invalidateUserAuthCache } from './jwt-auth.guard';
+
+const BCRYPT_ROUNDS = 12;
 
 @Injectable()
 export class AuthService {
@@ -15,11 +18,12 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  private signToken(user: { id: string; username: string; role: string }) {
+  private signToken(user: { id: string; username: string; role: string; tokenVersion: number }) {
     return this.jwtService.sign({
       sub: user.id,
       username: user.username,
       role: user.role,
+      tv: user.tokenVersion,
     });
   }
 
@@ -30,6 +34,7 @@ export class AuthService {
     displayName: string;
     role: string;
     createdAt: Date;
+    lastLoginAt?: Date | null;
   }) {
     return {
       id: user.id,
@@ -38,6 +43,7 @@ export class AuthService {
       displayName: user.displayName,
       role: user.role,
       createdAt: user.createdAt,
+      lastLoginAt: user.lastLoginAt ?? null,
     };
   }
 
@@ -46,8 +52,13 @@ export class AuthService {
     const email = dto.email ? dto.email.trim().toLowerCase() : null;
     const displayName = dto.displayName?.trim() || dto.username.trim();
 
+    if (!dto.password.trim()) {
+      throw new BadRequestException('Mật khẩu không được chỉ chứa khoảng trắng.');
+    }
+
     const existingUsername = await this.prisma.user.findUnique({
       where: { username },
+      select: { id: true },
     });
     if (existingUsername) {
       throw new BadRequestException(`Tên đăng nhập "${username}" đã được sử dụng.`);
@@ -56,13 +67,14 @@ export class AuthService {
     if (email) {
       const existingEmail = await this.prisma.user.findUnique({
         where: { email },
+        select: { id: true },
       });
       if (existingEmail) {
         throw new BadRequestException(`Email "${email}" đã được đăng ký.`);
       }
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
     const user = await this.prisma.$transaction(async (tx) => {
       const created = await tx.user.create({
@@ -72,6 +84,7 @@ export class AuthService {
           passwordHash,
           displayName,
           role: 'USER',
+          lastLoginAt: new Date(),
         },
       });
 
@@ -129,10 +142,15 @@ export class AuthService {
       throw new UnauthorizedException('Sai tên đăng nhập hoặc mật khẩu.');
     }
 
-    const accessToken = this.signToken(user);
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    const accessToken = this.signToken(updated);
     return {
       accessToken,
-      user: this.sanitizeUser(user),
+      user: this.sanitizeUser(updated),
     };
   }
 
@@ -146,6 +164,7 @@ export class AuthService {
         displayName: true,
         role: true,
         createdAt: true,
+        lastLoginAt: true,
         studyProfile: true,
         englishProfile: true,
       },
@@ -178,20 +197,34 @@ export class AuthService {
     }
 
     const data: any = {};
+    let passwordChanged = false;
+
     if (dto.displayName !== undefined) {
-      data.displayName = dto.displayName.trim();
+      const cleanName = dto.displayName.trim();
+      if (!cleanName) {
+        throw new BadRequestException('Tên hiển thị không được để trống.');
+      }
+      data.displayName = cleanName;
     }
+
     if (dto.email !== undefined) {
       const nextEmail = dto.email.trim().toLowerCase();
       if (nextEmail !== user.email) {
-        const dup = await this.prisma.user.findUnique({ where: { email: nextEmail } });
+        const dup = await this.prisma.user.findUnique({
+          where: { email: nextEmail },
+          select: { id: true },
+        });
         if (dup && dup.id !== userId) {
           throw new BadRequestException(`Email "${nextEmail}" đã được sử dụng.`);
         }
         data.email = nextEmail;
       }
     }
+
     if (dto.newPassword) {
+      if (!dto.newPassword.trim()) {
+        throw new BadRequestException('Mật khẩu mới không được chỉ chứa khoảng trắng.');
+      }
       if (!dto.currentPassword) {
         throw new BadRequestException('Vui lòng nhập mật khẩu hiện tại để đổi mật khẩu.');
       }
@@ -199,7 +232,12 @@ export class AuthService {
       if (!valid) {
         throw new BadRequestException('Mật khẩu hiện tại không chính xác.');
       }
-      data.passwordHash = await bcrypt.hash(dto.newPassword, 10);
+      if (dto.newPassword === dto.currentPassword) {
+        throw new BadRequestException('Mật khẩu mới phải khác mật khẩu hiện tại.');
+      }
+      data.passwordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS);
+      data.tokenVersion = { increment: 1 };
+      passwordChanged = true;
     }
 
     const updated = await this.prisma.user.update({
@@ -207,6 +245,28 @@ export class AuthService {
       data,
     });
 
-    return this.sanitizeUser(updated);
+    invalidateUserAuthCache(userId);
+
+    const sanitized = this.sanitizeUser(updated);
+    if (passwordChanged) {
+      return {
+        ...sanitized,
+        accessToken: this.signToken(updated),
+      };
+    }
+
+    return sanitized;
+  }
+
+  async logoutAllSessions(userId: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    invalidateUserAuthCache(userId);
+    return {
+      success: true,
+      message: 'Đã thu hồi toàn bộ phiên đăng nhập trên tất cả thiết bị.',
+    };
   }
 }

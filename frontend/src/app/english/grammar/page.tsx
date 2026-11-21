@@ -23,23 +23,32 @@ export default function EnglishGrammarPage() {
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [evals, setEvals] = useState<Record<string, any>>({});
   const [evaluatingId, setEvaluatingId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchApi<EnglishGrammarPoint[]>('/english/grammar').then(setList).catch(console.error);
+    fetchApi<EnglishGrammarPoint[]>('/english/grammar')
+      .then(setList)
+      .catch((err: any) => setErrorMsg(err?.message || 'Không thể tải danh sách ngữ pháp tiếng Anh.'));
   }, []);
 
   async function handleStatus(id: string, status: 'learning' | 'mastered') {
-    await fetchApi(`/english/grammar/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-    setList((prev) => prev.map((g) => (g.id === id ? { ...g, status } : g)));
+    setErrorMsg(null);
+    try {
+      await fetchApi(`/english/grammar/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      setList((prev) => prev.map((g) => (g.id === id ? { ...g, status } : g)));
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Không thể cập nhật trạng thái ngữ pháp.');
+    }
   }
 
   async function handlePractice(g: EnglishGrammarPoint) {
     const userEnglish = inputs[g.id]?.trim();
     if (!userEnglish) return;
     setEvaluatingId(g.id);
+    setErrorMsg(null);
     try {
       const res = await fetchApi<any>('/english/evaluate', {
         method: 'POST',
@@ -51,6 +60,8 @@ export default function EnglishGrammarPage() {
         }),
       });
       setEvals((p) => ({ ...p, [g.id]: res }));
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Không thể chấm câu. Vui lòng kiểm tra Gemini API Key phía trên.');
     } finally {
       setEvaluatingId(null);
     }
@@ -87,6 +98,15 @@ export default function EnglishGrammarPage() {
           ))}
         </div>
       </div>
+
+      {errorMsg && (
+        <div className="p-4 rounded-[22px] bg-berry-100/90 border border-berry-200 text-berry-700 text-sm font-bold flex items-center justify-between gap-2 shadow-clay-sm">
+          <span>{errorMsg}</span>
+          <button onClick={() => setErrorMsg(null)} className="underline text-xs shrink-0">
+            Đóng
+          </button>
+        </div>
+      )}
 
       <div className="space-y-5">
         {filtered.map((g) => {

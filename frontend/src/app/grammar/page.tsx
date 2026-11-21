@@ -27,14 +27,15 @@ export default function GrammarPage() {
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [evals, setEvals] = useState<Record<string, any>>({});
   const [evaluatingId, setEvaluatingId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   async function loadGrammar() {
     setLoading(true);
     try {
       const data = await fetchApi<GrammarPoint[]>('/curriculum/grammar');
       setList(data);
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Không thể tải danh sách ngữ pháp.');
     } finally {
       setLoading(false);
     }
@@ -45,17 +46,23 @@ export default function GrammarPage() {
   }, []);
 
   async function handleStatus(id: string, status: 'new' | 'learning' | 'mastered') {
-    await fetchApi(`/curriculum/grammar/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-    setList((prev) => prev.map((g) => (g.id === id ? { ...g, status } : g)));
+    setErrorMsg(null);
+    try {
+      await fetchApi(`/curriculum/grammar/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      setList((prev) => prev.map((g) => (g.id === id ? { ...g, status } : g)));
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Không thể cập nhật trạng thái ngữ pháp.');
+    }
   }
 
   async function handlePractice(g: GrammarPoint) {
     const userChinese = inputs[g.id]?.trim();
     if (!userChinese) return;
     setEvaluatingId(g.id);
+    setErrorMsg(null);
     try {
       const res = await fetchApi<any>('/curriculum/evaluate', {
         method: 'POST',
@@ -70,6 +77,8 @@ export default function GrammarPage() {
       if (res.isCorrect && g.status === 'new') {
         await handleStatus(g.id, 'learning');
       }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Không thể chấm câu. Vui lòng kiểm tra Gemini API Key phía trên.');
     } finally {
       setEvaluatingId(null);
     }
@@ -132,6 +141,15 @@ export default function GrammarPage() {
           ))}
         </div>
       </div>
+
+      {errorMsg && (
+        <div className="p-4 rounded-[22px] bg-berry-100/90 border border-berry-200 text-berry-700 text-sm font-bold flex items-center justify-between gap-2 shadow-clay-sm">
+          <span>{errorMsg}</span>
+          <button onClick={() => setErrorMsg(null)} className="underline text-xs shrink-0">
+            Đóng
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">

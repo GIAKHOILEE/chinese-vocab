@@ -37,7 +37,8 @@ export function clearAuthToken(): void {
 }
 
 export async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${API_BASE_URL}${path}`;
   const token = getAuthToken();
 
   const headers: Record<string, string> = {
@@ -62,15 +63,19 @@ export async function fetchApi<T>(endpoint: string, options?: RequestInit): Prom
     headers,
   });
 
-  if (res.status === 401) {
+  if (res.status === 401 && !path.startsWith('/auth/login') && !path.startsWith('/auth/register')) {
     clearAuthToken();
+    setRuntimeGeminiKey('');
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('auth:unauthorized'));
     }
   }
 
   if (!res.ok) {
-    let errorMessage = 'Đã có lỗi xảy ra khi gọi API';
+    let errorMessage =
+      res.status === 429
+        ? 'Bạn thao tác quá nhanh, vui lòng đợi vài giây rồi thử lại.'
+        : 'Đã có lỗi xảy ra khi gọi API';
     try {
       const errorData = await res.json();
       if (errorData.message) {

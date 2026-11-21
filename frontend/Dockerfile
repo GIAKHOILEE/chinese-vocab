@@ -8,6 +8,7 @@ RUN npm ci
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_STANDALONE true
 
 RUN npm run build
 
@@ -25,4 +26,4 @@ COPY --from=builder /app/package*.json ./
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

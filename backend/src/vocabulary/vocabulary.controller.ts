@@ -13,6 +13,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { VocabularyService } from './vocabulary.service';
 import { CreateVocabularyDto } from './dto/create-vocabulary.dto';
 import { BulkPasteDto, BulkVocabularyDto } from './dto/bulk-vocabulary.dto';
@@ -20,13 +21,15 @@ import { UpdateVocabularyDto } from './dto/update-vocabulary.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
 
+const MAX_CSV_BYTES = 2 * 1024 * 1024; // 2MB
+
 @UseGuards(JwtAuthGuard)
 @Controller('vocabulary')
 export class VocabularyController {
   constructor(private readonly vocabularyService: VocabularyService) {}
 
   /**
-   * GET /vocabulary - Lấy danh sách từ vựng (kho chuẩn chung + từ cá nhân của user)
+   * GET /vocabulary - Lấy danh sách từ vựng (hỗ trợ phân trang, lite mode và random pool cho Mini-Game)
    */
   @Get()
   findAll(
@@ -34,8 +37,22 @@ export class VocabularyController {
     @Query('search') search?: string,
     @Query('level') level?: string,
     @Query('partOfSpeech') partOfSpeech?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('lite') lite?: string,
+    @Query('random') random?: string,
   ) {
-    return this.vocabularyService.findAll(user.id, search, level, partOfSpeech);
+    const parsedPage = page ? Math.max(parseInt(page, 10) || 1, 1) : undefined;
+    const parsedLimit = limit
+      ? Math.min(Math.max(parseInt(limit, 10) || 50, 1), 1000)
+      : undefined;
+
+    return this.vocabularyService.findAll(user.id, search, level, partOfSpeech, {
+      page: parsedPage,
+      limit: parsedLimit,
+      lite: lite === 'true',
+      random: random === 'true',
+    });
   }
 
   /**
@@ -57,6 +74,7 @@ export class VocabularyController {
   /**
    * POST /vocabulary/bulk - Nhập danh sách từ vựng dạng paste nhiều dòng hoặc mảng items
    */
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('bulk')
   bulk(@CurrentUser() user: AuthUser, @Body() body: BulkPasteDto | BulkVocabularyDto) {
     if ('text' in body) {
@@ -68,10 +86,28 @@ export class VocabularyController {
   }
 
   /**
-   * POST /vocabulary/import - Import file CSV hoặc gửi chuỗi CSV
+   * POST /vocabulary/import - Import file CSV (tối đa 2MB) hoặc gửi chuỗi CSV
    */
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @Post('import')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: MAX_CSV_BYTES },
+      fileFilter: (_req, file, cb) => {
+        const lowerName = (file.originalname || '').toLowerCase();
+        const isCsv =
+          lowerName.endsWith('.csv') ||
+          lowerName.endsWith('.txt') ||
+          file.mimetype === 'text/csv' ||
+          file.mimetype === 'application/vnd.ms-excel' ||
+          file.mimetype === 'text/plain';
+        if (!isCsv) {
+          return cb(new BadRequestException('Chỉ chấp nhận file định dạng .csv hoặc .txt.'), false);
+        }
+        cb(null, true);
+      },
+    }),
+  )
   importCsv(
     @CurrentUser() user: AuthUser,
     @UploadedFile() file?: Express.Multer.File,
@@ -82,6 +118,9 @@ export class VocabularyController {
       return this.vocabularyService.importCsv(user.id, content);
     }
     if (csvContent) {
+      if (Buffer.byteLength(csvContent, 'utf8') > MAX_CSV_BYTES) {
+        throw new BadRequestException('Nội dung CSV vượt quá giới hạn 2MB.');
+      }
       return this.vocabularyService.importCsv(user.id, csvContent);
     }
     throw new BadRequestException('Vui lòng tải lên file CSV hoặc truyền dữ liệu csvContent');

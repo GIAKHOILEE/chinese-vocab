@@ -17,7 +17,7 @@ async function main() {
   let defaultUserId: string;
 
   if (userCount === 0) {
-    const passwordHash = await bcrypt.hash('123456', 10);
+    const passwordHash = await bcrypt.hash('123456', 12);
     const admin = await prisma.user.create({
       data: {
         username: 'admin',

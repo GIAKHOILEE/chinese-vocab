@@ -10,9 +10,12 @@ export default function EnglishGamesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
-    const qs = level === 'ALL' ? '' : `?level=${encodeURIComponent(level)}`;
-    fetchApi<any[]>(`/english/vocab${qs}`)
+    const params = new URLSearchParams({ lite: 'true', random: 'true', limit: '120' });
+    if (level !== 'ALL') params.set('level', level);
+
+    fetchApi<any[]>(`/english/vocab?${params.toString()}`, { signal: controller.signal })
       .then((rows) => {
         setWords(
           (rows || []).map((r) => ({
@@ -24,8 +27,14 @@ export default function EnglishGamesPage() {
           })),
         );
       })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (err?.name !== 'AbortError') console.error(err);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
   }, [level]);
 
   if (loading) {

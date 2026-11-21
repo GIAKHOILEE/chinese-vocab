@@ -11,10 +11,12 @@ export class RegisterDto {
 
   @IsOptional()
   @IsEmail({}, { message: 'Email không hợp lệ' })
+  @MaxLength(120)
   email?: string;
 
   @IsString()
   @MinLength(6, { message: 'Mật khẩu phải có ít nhất 6 ký tự' })
+  @MaxLength(128, { message: 'Mật khẩu tối đa 128 ký tự' })
   password: string;
 
   @IsOptional()
@@ -25,9 +27,11 @@ export class RegisterDto {
 
 export class LoginDto {
   @IsString()
+  @MaxLength(120)
   username: string; // Chấp nhận username hoặc email
 
   @IsString()
+  @MaxLength(128)
   password: string;
 }
 
@@ -40,14 +44,17 @@ export class UpdateProfileAccountDto {
 
   @IsOptional()
   @IsEmail({}, { message: 'Email không hợp lệ' })
+  @MaxLength(120)
   email?: string;
 
   @IsOptional()
   @IsString()
   @MinLength(6, { message: 'Mật khẩu mới phải có ít nhất 6 ký tự' })
+  @MaxLength(128, { message: 'Mật khẩu mới tối đa 128 ký tự' })
   newPassword?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(128)
   currentPassword?: string;
 }

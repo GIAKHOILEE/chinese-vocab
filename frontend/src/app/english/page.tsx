@@ -143,6 +143,12 @@ export default function EnglishStudyPage() {
         method: 'PATCH',
         body: JSON.stringify({ currentLevel: level }),
       });
+      setReviewIdx(0);
+      setLearnedNewIds(new Set());
+      setGrammarDoneIds(new Set());
+      setMixedData(null);
+      setEvaluations({});
+      setBatchSummary(null);
       await loadPlan(undefined, level);
     } catch (err: any) {
       setBannerMsg(err.message);
@@ -205,11 +211,15 @@ export default function EnglishStudyPage() {
   }
 
   async function handleMarkNewLearned(id: string) {
-    await fetchApi('/english/srs-review', {
-      method: 'POST',
-      body: JSON.stringify({ id, quality: 'good' }),
-    });
-    setLearnedNewIds((p) => new Set(p).add(id));
+    try {
+      await fetchApi('/english/srs-review', {
+        method: 'POST',
+        body: JSON.stringify({ id, quality: 'good' }),
+      });
+      setLearnedNewIds((p) => new Set(p).add(id));
+    } catch (err: any) {
+      setBannerMsg(err.message);
+    }
   }
 
   async function handleGenerateDialogue() {
@@ -236,11 +246,15 @@ export default function EnglishStudyPage() {
   }
 
   async function handleMarkGrammar(id: string) {
-    await fetchApi(`/english/grammar/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: 'mastered' }),
-    });
-    setGrammarDoneIds((p) => new Set(p).add(id));
+    try {
+      await fetchApi(`/english/grammar/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'mastered' }),
+      });
+      setGrammarDoneIds((p) => new Set(p).add(id));
+    } catch (err: any) {
+      setBannerMsg(err.message);
+    }
   }
 
   async function handleGenerateMixed() {

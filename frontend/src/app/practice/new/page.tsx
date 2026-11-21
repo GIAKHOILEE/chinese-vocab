@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { fetchApi } from '@/lib/api';
 import {
@@ -29,6 +29,7 @@ export default function NewPracticePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
+  const [visibleLimit, setVisibleLimit] = useState(60);
 
   // Options bài tập
   const [questionCountOption, setQuestionCountOption] = useState<number | 'custom'>(10);
@@ -43,11 +44,11 @@ export default function NewPracticePage() {
   const [generating, setGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Tải danh sách từ vựng (chọn sẵn 30 từ đầu tiên để tránh quá tải prompt)
+  // Tải danh sách từ vựng (chế độ nhẹ không kéo dư trường, chọn sẵn 30 từ đầu tiên)
   useEffect(() => {
     async function loadVocabularies() {
       try {
-        const data = await fetchApi<Vocabulary[]>('/vocabulary');
+        const data = await fetchApi<Vocabulary[]>('/vocabulary?lite=true');
         setVocabularies(data);
         setSelectedIds(new Set(data.slice(0, 30).map((v) => v.id)));
       } catch (err: any) {
@@ -59,15 +60,28 @@ export default function NewPracticePage() {
     loadVocabularies();
   }, []);
 
-  // Lọc từ vựng theo search & level
-  const filteredVocabularies = vocabularies.filter((v) => {
-    const matchSearch =
-      !search ||
-      v.word.toLowerCase().includes(search.toLowerCase()) ||
-      v.meaning.toLowerCase().includes(search.toLowerCase());
-    const matchLevel = levelFilter === 'ALL' || v.level === levelFilter;
-    return matchSearch && matchLevel;
-  });
+  // Lọc từ vựng theo search (bao gồm cả Pinyin) & level với useMemo
+  const filteredVocabularies = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return vocabularies.filter((v) => {
+      const matchSearch =
+        !q ||
+        v.word.toLowerCase().includes(q) ||
+        v.meaning.toLowerCase().includes(q) ||
+        (v.pinyin || '').toLowerCase().includes(q);
+      const matchLevel = levelFilter === 'ALL' || v.level === levelFilter;
+      return matchSearch && matchLevel;
+    });
+  }, [vocabularies, search, levelFilter]);
+
+  useEffect(() => {
+    setVisibleLimit(60);
+  }, [search, levelFilter]);
+
+  const displayedVocabularies = useMemo(
+    () => filteredVocabularies.slice(0, visibleLimit),
+    [filteredVocabularies, visibleLimit],
+  );
 
   // Chọn tất cả trong danh sách đang lọc
   const handleSelectAll = () => {
@@ -245,7 +259,7 @@ export default function NewPracticePage() {
                 Không tìm thấy từ vựng nào.
               </p>
             ) : (
-              filteredVocabularies.map((vocab) => {
+              displayedVocabularies.map((vocab) => {
                 const isSelected = selectedIds.has(vocab.id);
                 return (
                   <div
@@ -283,6 +297,15 @@ export default function NewPracticePage() {
                   </div>
                 );
               })
+            )}
+            {filteredVocabularies.length > displayedVocabularies.length && (
+              <button
+                type="button"
+                onClick={() => setVisibleLimit((n) => n + 60)}
+                className="w-full py-2.5 rounded-[16px] bg-linen-200/85 hover:bg-linen-300/85 text-cocoa-700 text-xs font-extrabold transition"
+              >
+                Hiển thị thêm từ ({displayedVocabularies.length} / {filteredVocabularies.length})
+              </button>
             )}
           </div>
         </div>

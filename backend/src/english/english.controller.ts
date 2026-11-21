@@ -1,7 +1,20 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { EnglishService } from './english.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
+import {
+  EnglishCompleteDayDto,
+  EnglishEvaluateAttemptDto,
+  EnglishEvaluateBatchDto,
+  EnglishMixedPracticeDto,
+  EnglishSrsReviewDto,
+  EnglishTopicDialogueDto,
+  EnglishWordDeepDiveDto,
+  SubmitPlacementTestDto,
+  UpdateEnglishProfileDto,
+} from './dto/english.dto';
+import { UpdateGrammarStatusDto } from '../curriculum/dto/curriculum.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('english')
@@ -16,15 +29,7 @@ export class EnglishController {
   @Patch('profile')
   updateProfile(
     @CurrentUser() user: AuthUser,
-    @Body()
-    body: {
-      currentLevel?: string;
-      dailyMinutesTarget?: number;
-      newWordsPerDay?: number;
-      reviewWordsPerDay?: number;
-      grammarPerDay?: number;
-      preferredModel?: string;
-    },
+    @Body() body: UpdateEnglishProfileDto,
   ) {
     return this.englishService.updateProfile(user.id, body);
   }
@@ -34,10 +39,11 @@ export class EnglishController {
     return this.englishService.getPlacementTest();
   }
 
+  @Throttle({ default: { limit: 15, ttl: 60_000 } })
   @Post('placement-submit')
   submitPlacementTest(
     @CurrentUser() user: AuthUser,
-    @Body() body: { answers: Record<string, number>; writingSamples?: Record<string, string>; model?: string },
+    @Body() body: SubmitPlacementTestDto,
   ) {
     return this.englishService.submitPlacementTest(user.id, body);
   }
@@ -54,88 +60,73 @@ export class EnglishController {
   @Post('srs-review')
   submitSrsReview(
     @CurrentUser() user: AuthUser,
-    @Body() body: { id: string; quality: 'again' | 'hard' | 'good' | 'easy' },
+    @Body() body: EnglishSrsReviewDto,
   ) {
     return this.englishService.submitSrsReview(user.id, body.id, body.quality);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('word-deep-dive')
   getWordDeepDive(
     @CurrentUser() user: AuthUser,
-    @Body() body: { id: string; model?: string },
+    @Body() body: EnglishWordDeepDiveDto,
   ) {
     return this.englishService.getWordDeepDive(user.id, body.id, body.model);
   }
 
+  @Throttle({ default: { limit: 25, ttl: 60_000 } })
   @Post('topic-dialogue')
   generateTopicDialogue(
     @CurrentUser() user: AuthUser,
-    @Body() body: { newWordIds: string[]; oldWordIds?: string[]; topic?: string; cefrLevel?: string; model?: string },
+    @Body() body: EnglishTopicDialogueDto,
   ) {
     return this.englishService.generateTopicDialogue(user.id, body);
   }
 
+  @Throttle({ default: { limit: 25, ttl: 60_000 } })
   @Post('mixed-practice')
   generateMixedPractice(
     @CurrentUser() user: AuthUser,
-    @Body() body: { newWordIds: string[]; reviewWordIds: string[]; grammarIds: string[]; cefrLevel?: string; model?: string },
+    @Body() body: EnglishMixedPracticeDto,
   ) {
     return this.englishService.generateMixedPractice(user.id, body);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('evaluate')
-  evaluateAttempt(
-    @Body()
-    body: {
-      promptVietnamese: string;
-      referenceEnglish?: string;
-      targetWords?: string[];
-      grammarTitle?: string;
-      userEnglish: string;
-      cefrLevel?: string;
-      model?: string;
-    },
-  ) {
+  evaluateAttempt(@Body() body: EnglishEvaluateAttemptDto) {
     return this.englishService.evaluateAttempt(body);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('evaluate-batch')
-  evaluateBatch(
-    @Body()
-    body: {
-      items: Array<{
-        key: string;
-        promptVietnamese: string;
-        referenceEnglish?: string;
-        targetWords?: string[];
-        grammarTitle?: string;
-        userEnglish: string;
-      }>;
-      cefrLevel?: string;
-      model?: string;
-    },
-  ) {
+  evaluateBatch(@Body() body: EnglishEvaluateBatchDto) {
     return this.englishService.evaluateBatch(body);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('complete-day')
   completeDailySession(
     @CurrentUser() user: AuthUser,
-    @Body()
-    body: {
-      minutesSpent: number;
-      newWordsLearned: number;
-      wordsReviewed: number;
-      averageScore?: number;
-      model?: string;
-    },
+    @Body() body: EnglishCompleteDayDto,
   ) {
     return this.englishService.completeDailySession(user.id, body);
   }
 
   @Get('vocab')
-  getVocabList(@CurrentUser() user: AuthUser, @Query('level') level?: string) {
-    return this.englishService.getVocabList(user.id, level);
+  getVocabList(
+    @CurrentUser() user: AuthUser,
+    @Query('level') level?: string,
+    @Query('lite') lite?: string,
+    @Query('random') random?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedLimit = limit ? Math.min(Math.max(parseInt(limit, 10) || 0, 1), 1000) : undefined;
+    return this.englishService.getVocabList(user.id, level, {
+      lite: lite === 'true',
+      random: random === 'true',
+      limit: parsedLimit,
+    });
   }
 
   @Get('grammar')
@@ -147,7 +138,7 @@ export class EnglishController {
   updateGrammarStatus(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() body: { status: 'new' | 'learning' | 'mastered' },
+    @Body() body: UpdateGrammarStatusDto,
   ) {
     return this.englishService.updateGrammarStatus(user.id, id, body.status);
   }

@@ -1,7 +1,19 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { CurriculumService } from './curriculum.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AuthUser, CurrentUser } from '../auth/current-user.decorator';
+import {
+  ChineseCompleteDayDto,
+  ChineseEvaluateAttemptDto,
+  ChineseEvaluateBatchDto,
+  ChineseMixedPracticeDto,
+  ChineseSrsReviewDto,
+  ChineseTopicDialogueDto,
+  ChineseWordDeepDiveDto,
+  UpdateGrammarStatusDto,
+  UpdateStudyProfileDto,
+} from './dto/curriculum.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('curriculum')
@@ -22,17 +34,11 @@ export class CurriculumController {
     return this.curriculumService.getTodayPlan(user.id, topic, level);
   }
 
+  @Throttle({ default: { limit: 25, ttl: 60_000 } })
   @Post('topic-dialogue')
   generateTopicDialogue(
     @CurrentUser() user: AuthUser,
-    @Body()
-    body: {
-      newWordIds: string[];
-      oldWordIds?: string[];
-      topic?: string;
-      level?: string;
-      model?: string;
-    },
+    @Body() body: ChineseTopicDialogueDto,
   ) {
     return this.curriculumService.generateTopicDialogue(user.id, body);
   }
@@ -40,15 +46,7 @@ export class CurriculumController {
   @Patch('profile')
   updateProfile(
     @CurrentUser() user: AuthUser,
-    @Body()
-    body: {
-      currentLevel?: string;
-      dailyMinutesTarget?: number;
-      newWordsPerDay?: number;
-      reviewWordsPerDay?: number;
-      grammarPerDay?: number;
-      preferredModel?: string;
-    },
+    @Body() body: UpdateStudyProfileDto,
   ) {
     return this.curriculumService.updateProfile(user.id, body);
   }
@@ -56,84 +54,52 @@ export class CurriculumController {
   @Post('srs-review')
   submitSrsReview(
     @CurrentUser() user: AuthUser,
-    @Body() body: { vocabularyId: string; quality: 'again' | 'hard' | 'good' | 'easy' },
+    @Body() body: ChineseSrsReviewDto,
   ) {
     return this.curriculumService.submitSrsReview(user.id, body.vocabularyId, body.quality);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('word-deep-dive')
   getWordDeepDive(
     @CurrentUser() user: AuthUser,
-    @Body() body: { vocabularyId: string; model?: string },
+    @Body() body: ChineseWordDeepDiveDto,
   ) {
     return this.curriculumService.getWordDeepDive(user.id, body.vocabularyId, body.model);
   }
 
+  @Throttle({ default: { limit: 25, ttl: 60_000 } })
   @Post('mixed-practice')
   generateMixedPractice(
     @CurrentUser() user: AuthUser,
-    @Body()
-    body: {
-      newWordIds: string[];
-      reviewWordIds: string[];
-      grammarIds: string[];
-      level?: string;
-      model?: string;
-    },
+    @Body() body: ChineseMixedPracticeDto,
   ) {
     return this.curriculumService.generateMixedPractice(user.id, body);
   }
 
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @Post('evaluate')
   evaluateAttempt(
     @CurrentUser() user: AuthUser,
-    @Body()
-    body: {
-      promptVietnamese: string;
-      referenceChinese?: string;
-      targetWords?: string[];
-      grammarTitle?: string;
-      userChinese: string;
-      level?: string;
-      model?: string;
-    },
+    @Body() body: ChineseEvaluateAttemptDto,
   ) {
     return this.curriculumService.evaluateAttempt(user.id, body);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('evaluate-batch')
   evaluateBatch(
     @CurrentUser() user: AuthUser,
-    @Body()
-    body: {
-      items: Array<{
-        key: string;
-        promptVietnamese: string;
-        referenceChinese?: string;
-        targetWords?: string[];
-        grammarTitle?: string;
-        userChinese: string;
-      }>;
-      level?: string;
-      model?: string;
-    },
+    @Body() body: ChineseEvaluateBatchDto,
   ) {
     return this.curriculumService.evaluateBatch(user.id, body);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('complete-day')
   completeDailySession(
     @CurrentUser() user: AuthUser,
-    @Body()
-    body: {
-      minutesSpent: number;
-      newWordsLearned: number;
-      wordsReviewed: number;
-      grammarPracticed: number;
-      averageScore?: number;
-      weakWords?: string[];
-      model?: string;
-    },
+    @Body() body: ChineseCompleteDayDto,
   ) {
     return this.curriculumService.completeDailySession(user.id, body);
   }
@@ -147,7 +113,7 @@ export class CurriculumController {
   updateGrammarStatus(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() body: { status: 'new' | 'learning' | 'mastered' },
+    @Body() body: UpdateGrammarStatusDto,
   ) {
     return this.curriculumService.updateGrammarStatus(user.id, id, body.status);
   }

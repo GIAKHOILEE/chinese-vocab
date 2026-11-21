@@ -16,9 +16,11 @@ model User {
   email        String?  @unique
   passwordHash String
   displayName  String
-  role         String   @default("USER") // USER | ADMIN
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  role         String    @default("USER") // USER | ADMIN
+  tokenVersion Int       @default(1)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   // Từ vựng cá nhân (null = kho từ vựng chuẩn dùng chung toàn hệ thống)
   customVocabularies  Vocabulary[]
@@ -60,6 +62,8 @@ model Vocabulary {
   @@index([ownerId])
   @@index([level])
   @@index([word])
+  @@index([scopeKey, level])
+  @@index([scopeKey, createdAt])
 }
 
 // Tiến độ SRS & ghi chú AI riêng cho từng cặp (User, Vocabulary)
@@ -182,6 +186,8 @@ model EnglishVocab {
   @@unique([scopeKey, word])
   @@index([ownerId])
   @@index([cefrLevel])
+  @@index([scopeKey, cefrLevel, topic])
+  @@index([scopeKey, createdAt])
 }
 
 // Tiến độ SRS Tiếng Anh riêng theo từng User

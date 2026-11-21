@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { fetchApi } from '@/lib/api';
-import { ClipboardCheck, Sparkles, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { ClipboardCheck, Sparkles, ArrowRight, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface PlacementData {
   questions: Array<{
@@ -25,19 +25,25 @@ export default function EnglishPlacementPage() {
   const [writingSamples, setWritingSamples] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchApi<PlacementData>('/english/placement-test').then(setData).catch(console.error);
+    fetchApi<PlacementData>('/english/placement-test')
+      .then(setData)
+      .catch((err: any) => setErrorMsg(err?.message || 'Không thể tải bài kiểm tra đầu vào.'));
   }, []);
 
   async function handleSubmit() {
     setSubmitting(true);
+    setErrorMsg(null);
     try {
       const res = await fetchApi<any>('/english/placement-submit', {
         method: 'POST',
         body: JSON.stringify({ answers, writingSamples }),
       });
       setResult(res);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Không thể nộp bài kiểm tra đầu vào. Vui lòng thử lại.');
     } finally {
       setSubmitting(false);
     }
@@ -167,6 +173,13 @@ export default function EnglishPlacementPage() {
             <Sparkles className="w-4 h-4" />
             <span>{submitting ? 'AI đang chấm & xếp trình độ...' : 'Hoàn thành & Xem kết quả trình độ'}</span>
           </button>
+
+          {errorMsg && (
+            <div className="p-4 rounded-[20px] bg-berry-100/90 border border-berry-200 text-berry-700 text-sm font-bold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -117,15 +117,24 @@ export default function Navigation() {
                 </Link>
               </div>
 
-              {/* Badge người dùng hiện tại + Đăng xuất */}
+              {/* Badge người dùng hiện tại + Cài đặt tài khoản + Đăng xuất */}
               <div className="inline-flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-[20px] bg-linen-100/90 border border-cocoa-400/20 shadow-clay-sm">
-                <User className="w-3.5 h-3.5 text-peach-600" />
-                <span className="text-xs font-extrabold text-cocoa-800 max-w-[110px] truncate">
-                  {user.displayName || user.username}
-                </span>
+                <Link
+                  href="/account"
+                  title="Quản lý tài khoản & Đổi mật khẩu"
+                  className="inline-flex items-center gap-1.5 hover:text-peach-600 transition"
+                >
+                  <User className="w-3.5 h-3.5 text-peach-600" />
+                  <span className="text-xs font-extrabold text-cocoa-800 max-w-[110px] truncate hover:text-peach-700">
+                    {user.displayName || user.username}
+                  </span>
+                </Link>
                 <button
                   type="button"
-                  onClick={logout}
+                  onClick={() => {
+                    clearApiKey();
+                    logout();
+                  }}
                   title="Đăng xuất / Đổi tài khoản"
                   className="p-1.5 rounded-full text-cocoa-500 hover:text-berry-700 hover:bg-berry-100/80 transition"
                 >

@@ -239,9 +239,18 @@ Return JSON strictly in this format:
     });
   }
 
-  async updateQuestion(userId: string, questionId: string, dto: UpdateQuestionDto) {
+  async updateQuestion(
+    userId: string,
+    questionId: string,
+    dto: UpdateQuestionDto,
+    practiceSetId?: string,
+  ) {
     const question = await this.prisma.question.findFirst({
-      where: { id: questionId, practiceSet: { userId } },
+      where: {
+        id: questionId,
+        ...(practiceSetId ? { practiceSetId } : {}),
+        practiceSet: { userId },
+      },
     });
     if (!question) {
       throw new NotFoundException(`Không tìm thấy câu hỏi với ID: ${questionId}`);
@@ -263,9 +272,13 @@ Return JSON strictly in this format:
     });
   }
 
-  async deleteQuestion(userId: string, questionId: string) {
+  async deleteQuestion(userId: string, questionId: string, practiceSetId?: string) {
     const question = await this.prisma.question.findFirst({
-      where: { id: questionId, practiceSet: { userId } },
+      where: {
+        id: questionId,
+        ...(practiceSetId ? { practiceSetId } : {}),
+        practiceSet: { userId },
+      },
     });
     if (!question) {
       throw new NotFoundException(`Không tìm thấy câu hỏi với ID: ${questionId}`);
