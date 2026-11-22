@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { GEMINI_MODELS, useGeminiConfig } from '@/components/GeminiProvider';
+import { prefetchApi } from '@/lib/api';
 import {
   BookOpen,
   PenTool,
@@ -61,6 +62,25 @@ export default function Navigation() {
 
   const navItems = isEnglishMode ? englishNavItems : chineseNavItems;
 
+  const prefetchRouteData = (href: string) => {
+    if (href === '/') {
+      prefetchApi('/practice/stats/dashboard');
+      prefetchApi('/curriculum/summary');
+    } else if (href === '/study') {
+      prefetchApi('/curriculum/today');
+    } else if (href === '/grammar') {
+      prefetchApi('/curriculum/grammar');
+    } else if (href === '/practice') {
+      prefetchApi('/practice');
+    } else if (href === '/english/dashboard') {
+      prefetchApi('/english/summary');
+    } else if (href === '/english') {
+      prefetchApi('/english/today');
+    } else if (href === '/english/grammar') {
+      prefetchApi('/english/grammar');
+    }
+  };
+
   return (
     <>
       <header className="sticky top-0 z-50 pt-3 px-3 sm:px-6">
@@ -95,6 +115,8 @@ export default function Navigation() {
               <div className="inline-flex p-1.5 rounded-[22px] bg-linen-200/85 border border-cocoa-400/15 shadow-clay-inset gap-1">
                 <Link
                   href="/"
+                  onMouseEnter={() => prefetchRouteData('/')}
+                  onFocus={() => prefetchRouteData('/')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[16px] text-xs sm:text-sm font-bold transition-all duration-200 ${
                     !isEnglishMode
                       ? 'bg-gradient-to-b from-peach-400 to-peach-500 text-linen-50 shadow-clay-peach'
@@ -106,6 +128,8 @@ export default function Navigation() {
                 </Link>
                 <Link
                   href="/english/dashboard"
+                  onMouseEnter={() => prefetchRouteData('/english/dashboard')}
+                  onFocus={() => prefetchRouteData('/english/dashboard')}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-[16px] text-xs sm:text-sm font-bold transition-all duration-200 ${
                     isEnglishMode
                       ? 'bg-gradient-to-b from-sage-400 to-sage-500 text-linen-50 shadow-clay-sage'
@@ -160,6 +184,8 @@ export default function Navigation() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  onMouseEnter={() => prefetchRouteData(item.href)}
+                  onFocus={() => prefetchRouteData(item.href)}
                   className={`flex items-center gap-1.5 px-3.5 py-2 rounded-[18px] text-xs sm:text-sm font-bold whitespace-nowrap transition-all duration-200 ${
                     isActive
                       ? isEnglishMode

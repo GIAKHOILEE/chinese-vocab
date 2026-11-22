@@ -3,11 +3,16 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
+  ApiError,
   clearAuthToken,
   fetchApi,
   getAuthToken,
+  getCachedAuthUser,
+  prefetchApi,
   setAuthToken,
+  setCachedAuthUser,
   setRuntimeGeminiKey,
+  wakeUpBackend,
 } from '@/lib/api';
 
 export interface UserAccount {
@@ -43,19 +48,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   const refreshUser = useCallback(async () => {
+    wakeUpBackend();
+
     const token = getAuthToken();
     if (!token) {
+      setCachedAuthUser(null);
       setUser(null);
       setLoading(false);
       return;
     }
 
+    // Optimistic Auth Shell: mở thẳng giao diện nếu đã có user snapshot trong localStorage
+    const cachedUser = getCachedAuthUser<UserAccount>();
+    if (cachedUser) {
+      setUser(cachedUser);
+      setLoading(false);
+    }
+
     try {
       const me = await fetchApi<UserAccount>('/auth/me');
+      setCachedAuthUser(me);
       setUser(me);
-    } catch {
-      clearAuthToken();
-      setUser(null);
+    } catch (err) {
+      // Chỉ đăng xuất khi server xác nhận 401/403 (token hết hạn/không hợp lệ),
+      // không văng đăng nhập nếu Render đang cold start hoặc rớt mạng tạm thời.
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        clearAuthToken();
+        setUser(null);
+      } else if (!cachedUser) {
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -68,6 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const handleUnauthorized = () => {
       setRuntimeGeminiKey('');
+      setCachedAuthUser(null);
       setUser(null);
       if (pathname !== '/login') {
         router.replace('/login');
@@ -92,7 +115,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ username, password }),
       });
       setAuthToken(res.accessToken);
+      setCachedAuthUser(res.user);
       setUser(res.user);
+      prefetchApi('/practice/stats/dashboard');
+      prefetchApi('/curriculum/summary');
       router.replace('/');
     },
     [router],
@@ -105,7 +131,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify(payload),
       });
       setAuthToken(res.accessToken);
+      setCachedAuthUser(res.user);
       setUser(res.user);
+      prefetchApi('/practice/stats/dashboard');
+      prefetchApi('/curriculum/summary');
       router.replace('/');
     },
     [router],
@@ -121,11 +150,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="clay-card p-8 text-center space-y-2 max-w-sm w-full">
+        <div className="clay-card p-8 text-center space-y-2.5 max-w-sm w-full">
           <div className="w-12 h-12 mx-auto rounded-[18px] bg-gradient-to-b from-peach-400 to-peach-500 text-linen-50 flex items-center justify-center font-chinese text-2xl font-bold shadow-clay-peach">
             习
           </div>
           <p className="text-sm font-bold text-cocoa-700">Đang kiểm tra phiên đăng nhập...</p>
+          <p className="text-xs text-cocoa-500">
+            Đang kết nối máy chủ để khôi phục dữ liệu học tập của bạn.
+          </p>
         </div>
       </div>
     );

@@ -11,6 +11,7 @@ import { PracticeModule } from './practice/practice.module';
 import { CurriculumModule } from './curriculum/curriculum.module';
 import { EnglishModule } from './english/english.module';
 import { AuthModule } from './auth/auth.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { AuthModule } from './auth/auth.module';
     CurriculumModule,
     EnglishModule,
   ],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

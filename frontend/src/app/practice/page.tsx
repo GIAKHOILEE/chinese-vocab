@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, fetchApiCached, getCachedApi, invalidateApiCache, setCachedApi } from '@/lib/api';
+import { CardListSkeleton, SyncingPill } from '@/components/LoadingPrimitives';
 import {
   Play,
   Trash2,
@@ -31,6 +32,7 @@ interface PracticeSet {
 export default function PracticeHistoryPage() {
   const [practiceSets, setPracticeSets] = useState<PracticeSet[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   // Trạng thái modal chỉnh sửa
   const [editingSet, setEditingSet] = useState<PracticeSet | null>(null);
@@ -48,13 +50,20 @@ export default function PracticeHistoryPage() {
   };
 
   const loadHistory = async () => {
+    const cached = getCachedApi<PracticeSet[]>('/practice');
+    if (cached) {
+      setPracticeSets(cached);
+      setLoading(false);
+      setSyncing(true);
+    }
     try {
-      const data = await fetchApi<PracticeSet[]>('/practice');
+      const data = await fetchApiCached<PracticeSet[]>('/practice');
       setPracticeSets(data);
     } catch (err) {
       console.error('Không thể tải lịch sử bài tập:', err);
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   };
 
@@ -98,8 +107,8 @@ export default function PracticeHistoryPage() {
         }),
       });
 
-      setPracticeSets((prev) =>
-        prev.map((item) =>
+      setPracticeSets((prev) => {
+        const next = prev.map((item) =>
           item.id === editingSet.id
             ? {
                 ...item,
@@ -107,8 +116,10 @@ export default function PracticeHistoryPage() {
                 description: updated.description,
               }
             : item,
-        ),
-      );
+        );
+        setCachedApi('/practice', next);
+        return next;
+      });
 
       closeEditModal();
       showToast('Đã cập nhật bài tập thành công!');
@@ -124,7 +135,12 @@ export default function PracticeHistoryPage() {
     if (!confirm('Bạn có chắc muốn xóa bộ bài tập này?')) return;
     try {
       await fetchApi(`/practice/${id}`, { method: 'DELETE' });
-      setPracticeSets((prev) => prev.filter((p) => p.id !== id));
+      setPracticeSets((prev) => {
+        const next = prev.filter((p) => p.id !== id);
+        setCachedApi('/practice', next);
+        return next;
+      });
+      invalidateApiCache(['/practice/stats/dashboard']);
       showToast('Đã xóa bài tập!');
     } catch (err) {
       alert('Không thể xóa bài tập');
@@ -149,6 +165,7 @@ export default function PracticeHistoryPage() {
               <History className="w-5 h-5" />
             </span>
             <span>Lịch sử Luyện tập</span>
+            <SyncingPill syncing={syncing} tone="peach" />
           </h1>
           <p className="text-sm text-cocoa-500 mt-1.5">
             Các bộ bài tập đã tạo. Bạn có thể chỉnh sửa tiêu đề, mô tả và mở lại để ôn luyện bất cứ lúc nào.
@@ -166,9 +183,7 @@ export default function PracticeHistoryPage() {
 
       {/* Danh sách bài tập */}
       {loading ? (
-        <div className="clay-card p-12 text-center text-cocoa-400 text-sm font-semibold">
-          Đang tải lịch sử...
-        </div>
+        <CardListSkeleton count={4} label="Đang tải lịch sử luyện tập..." />
       ) : practiceSets.length === 0 ? (
         <div className="clay-card p-12 text-center space-y-4">
           <p className="text-cocoa-500 text-sm font-semibold">Chưa có bài tập nào được tạo.</p>

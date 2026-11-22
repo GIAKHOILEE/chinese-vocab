@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, fetchApiCached, getCachedApi, invalidateApiCache } from '@/lib/api';
+import { SyncingPill } from '@/components/LoadingPrimitives';
 import { useAuth } from '@/components/AuthProvider';
 import {
   Search,
@@ -51,6 +52,7 @@ export default function VocabularyPage() {
   const { user } = useAuth();
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState('ALL');
@@ -103,37 +105,55 @@ export default function VocabularyPage() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Load danh sách từ vựng có phân trang phía server
+  // Load danh sách từ vựng có phân trang phía server (kèm SWR cache)
   const loadVocabularies = useCallback(
     async (signal?: AbortSignal) => {
-      setLoading(true);
-      try {
-        const queryParams = new URLSearchParams({
-          page: String(page),
-          limit: String(PAGE_SIZE),
-        });
-        if (debouncedSearch.trim()) queryParams.append('search', debouncedSearch.trim());
-        if (levelFilter && levelFilter !== 'ALL') queryParams.append('level', levelFilter);
-        if (partOfSpeechFilter && partOfSpeechFilter !== 'ALL') {
-          queryParams.append('partOfSpeech', partOfSpeechFilter);
-        }
+      const queryParams = new URLSearchParams({
+        page: String(page),
+        limit: String(PAGE_SIZE),
+      });
+      if (debouncedSearch.trim()) queryParams.append('search', debouncedSearch.trim());
+      if (levelFilter && levelFilter !== 'ALL') queryParams.append('level', levelFilter);
+      if (partOfSpeechFilter && partOfSpeechFilter !== 'ALL') {
+        queryParams.append('partOfSpeech', partOfSpeechFilter);
+      }
 
-        const data = await fetchApi<{
+      const endpoint = `/vocabulary?${queryParams.toString()}`;
+      const cached = getCachedApi<{
+        items: Vocabulary[];
+        total: number;
+        page: number;
+        totalPages: number;
+      }>(endpoint);
+
+      if (cached) {
+        setVocabularies(cached.items || []);
+        setTotal(cached.total ?? 0);
+        setTotalPages(cached.totalPages ?? 1);
+        setLoading(false);
+        setSyncing(true);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const data = await fetchApiCached<{
           items: Vocabulary[];
           total: number;
           page: number;
           totalPages: number;
-        }>(`/vocabulary?${queryParams.toString()}`, signal ? { signal } : undefined);
+        }>(endpoint, signal ? { signal } : undefined);
         setVocabularies(data.items || []);
         setTotal(data.total ?? 0);
         setTotalPages(data.totalPages ?? 1);
       } catch (err: any) {
-        if (err?.name !== 'AbortError') {
+        if (err?.name !== 'AbortError' && !cached) {
           setErrorMsg(err.message || 'Không thể tải danh sách từ vựng');
         }
       } finally {
         if (!signal?.aborted) {
           setLoading(false);
+          setSyncing(false);
         }
       }
     },
@@ -177,6 +197,7 @@ export default function VocabularyPage() {
       setSuccessMsg(`Đã thêm từ "${singleForm.word}" thành công!`);
       setSingleForm({ word: '', meaning: '', partOfSpeech: '', pinyin: '', level: 'HSK2' });
       setActiveTab('list');
+      invalidateApiCache(['/vocabulary', '/practice/stats/dashboard', '/curriculum/summary', '/curriculum/today']);
       loadVocabularies();
     } catch (err: any) {
       setErrorMsg(err.message || 'Không thể thêm từ vựng');
@@ -195,6 +216,7 @@ export default function VocabularyPage() {
       setSuccessMsg(res.message || 'Đã nhập danh sách từ vựng thành công');
       setBulkText('');
       setActiveTab('list');
+      invalidateApiCache(['/vocabulary', '/practice/stats/dashboard', '/curriculum/summary', '/curriculum/today']);
       loadVocabularies();
     } catch (err: any) {
       setErrorMsg(err.message || 'Không thể nhập từ vựng');
@@ -213,6 +235,7 @@ export default function VocabularyPage() {
       setSuccessMsg(res.message || 'Import CSV thành công');
       setCsvContent('');
       setActiveTab('list');
+      invalidateApiCache(['/vocabulary', '/practice/stats/dashboard', '/curriculum/summary', '/curriculum/today']);
       loadVocabularies();
     } catch (err: any) {
       setErrorMsg(err.message || 'Lỗi khi import file CSV');
@@ -226,6 +249,7 @@ export default function VocabularyPage() {
       await fetchApi(`/vocabulary/${id}`, { method: 'DELETE' });
       setVocabularies((prev) => prev.filter((v) => v.id !== id));
       setTotal((t) => Math.max(0, t - 1));
+      invalidateApiCache(['/vocabulary', '/practice/stats/dashboard', '/curriculum/summary', '/curriculum/today']);
       setSuccessMsg(`Đã xóa từ "${word}"`);
     } catch (err: any) {
       setErrorMsg(err.message || 'Không thể xóa từ vựng');
@@ -253,6 +277,7 @@ export default function VocabularyPage() {
       });
       setVocabularies((prev) => prev.map((v) => (v.id === id ? updated : v)));
       setEditingId(null);
+      invalidateApiCache(['/vocabulary', '/curriculum/today']);
       setSuccessMsg('Cập nhật từ vựng thành công');
     } catch (err: any) {
       setErrorMsg(err.message || 'Không thể cập nhật từ vựng');
@@ -269,6 +294,7 @@ export default function VocabularyPage() {
               <BookOpen className="w-5 h-5" />
             </span>
             <span>Quản lý Từ vựng</span>
+            <SyncingPill syncing={syncing} tone="peach" />
           </h1>
           <p className="text-sm text-cocoa-500 mt-1.5">
             Lưu trữ từ vựng cá nhân, làm phong phú vốn từ để sinh các câu luyện tập.

@@ -145,3 +145,23 @@ body::before {
     transform: translateY(0) scale(1);
   }
 }
+
+@keyframes clayShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.clay-shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(235, 224, 207, 0.55) 25%,
+    rgba(251, 247, 240, 0.95) 50%,
+    rgba(235, 224, 207, 0.55) 75%
+  );
+  background-size: 200% 100%;
+  animation: clayShimmer 1.6s infinite linear;
+}

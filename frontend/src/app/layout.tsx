@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Navigation from '@/components/Navigation';
 import { AuthProvider } from '@/components/AuthProvider';
 import { GeminiProvider } from '@/components/GeminiProvider';
+import { SlowServerBanner } from '@/components/LoadingPrimitives';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -31,6 +32,7 @@ export default function RootLayout({
             <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 md:px-8 py-6 sm:py-8">
               {children}
             </main>
+            <SlowServerBanner />
           </GeminiProvider>
         </AuthProvider>
       </body>

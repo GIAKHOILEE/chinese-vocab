@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, fetchApiCached, getCachedApi, invalidateApiCache, setCachedApi } from '@/lib/api';
+import { CardListSkeleton, SyncingPill } from '@/components/LoadingPrimitives';
 import { speakChinese } from '@/lib/speech';
 import { GraduationCap, Volume2, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
 
@@ -22,6 +23,7 @@ interface GrammarPoint {
 export default function GrammarPage() {
   const [list, setList] = useState<GrammarPoint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [levelFilter, setLevelFilter] = useState<'ALL' | 'HSK1' | 'HSK2' | 'HSK3'>('ALL');
   const [filter, setFilter] = useState<'all' | 'new' | 'learning' | 'mastered'>('all');
   const [inputs, setInputs] = useState<Record<string, string>>({});
@@ -30,14 +32,22 @@ export default function GrammarPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   async function loadGrammar() {
-    setLoading(true);
+    const cached = getCachedApi<GrammarPoint[]>('/curriculum/grammar');
+    if (cached) {
+      setList(cached);
+      setLoading(false);
+      setSyncing(true);
+    } else {
+      setLoading(true);
+    }
     try {
-      const data = await fetchApi<GrammarPoint[]>('/curriculum/grammar');
+      const data = await fetchApiCached<GrammarPoint[]>('/curriculum/grammar');
       setList(data);
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Không thể tải danh sách ngữ pháp.');
+      if (!cached) setErrorMsg(err?.message || 'Không thể tải danh sách ngữ pháp.');
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   }
 
@@ -47,13 +57,19 @@ export default function GrammarPage() {
 
   async function handleStatus(id: string, status: 'new' | 'learning' | 'mastered') {
     setErrorMsg(null);
+    const previousList = list;
+    const optimisticList = list.map((g) => (g.id === id ? { ...g, status } : g));
+    setList(optimisticList);
+    setCachedApi('/curriculum/grammar', optimisticList);
+    invalidateApiCache(['/curriculum/summary', '/curriculum/today']);
     try {
       await fetchApi(`/curriculum/grammar/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       });
-      setList((prev) => prev.map((g) => (g.id === id ? { ...g, status } : g)));
     } catch (err: any) {
+      setList(previousList);
+      setCachedApi('/curriculum/grammar', previousList);
       setErrorMsg(err?.message || 'Không thể cập nhật trạng thái ngữ pháp.');
     }
   }
@@ -98,6 +114,7 @@ export default function GrammarPage() {
                 <GraduationCap className="w-5 h-5" />
               </span>
               <span>Ngữ pháp Tiếng Trung HSK 1 → 3 (3.0)</span>
+              <SyncingPill syncing={syncing} tone="peach" />
             </h1>
             <p className="text-sm text-cocoa-600 mt-1.5">
               Tổng hợp {byLevel.length} cấu trúc ngữ pháp • Đã nắm vững:{' '}
@@ -152,9 +169,7 @@ export default function GrammarPage() {
       )}
 
       {loading ? (
-        <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
-          Đang tải danh sách ngữ pháp...
-        </div>
+        <CardListSkeleton count={4} label="Đang tải danh sách ngữ pháp..." />
       ) : (
         <div className="space-y-5">
           {filtered.map((g) => {

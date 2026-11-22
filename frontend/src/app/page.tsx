@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchApi } from '@/lib/api';
+import { fetchApiCached, getCachedApi, prefetchApi } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
+import { SyncingPill } from '@/components/LoadingPrimitives';
 import {
   BookOpen,
   PenTool,
@@ -51,20 +52,36 @@ export default function DashboardPage() {
   });
   const [curriculum, setCurriculum] = useState<CurriculumSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
+    const cachedStats = getCachedApi<Stats>('/practice/stats/dashboard');
+    const cachedCurr = getCachedApi<CurriculumSummary>('/curriculum/summary');
+    if (cachedStats) {
+      setStats(cachedStats);
+      setLoading(false);
+    }
+    if (cachedCurr) {
+      setCurriculum(cachedCurr);
+    }
+    if (cachedStats || cachedCurr) {
+      setSyncing(true);
+    }
+
     async function loadStats() {
       try {
         const [data, curr] = await Promise.all([
-          fetchApi<Stats>('/practice/stats/dashboard'),
-          fetchApi<CurriculumSummary>('/curriculum/summary').catch(() => null),
+          fetchApiCached<Stats>('/practice/stats/dashboard'),
+          fetchApiCached<CurriculumSummary>('/curriculum/summary').catch(() => null),
         ]);
         setStats(data);
-        setCurriculum(curr);
+        if (curr) setCurriculum(curr);
+        prefetchApi('/curriculum/today');
       } catch (err) {
         console.error('Không thể tải thống kê Dashboard:', err);
       } finally {
         setLoading(false);
+        setSyncing(false);
       }
     }
     loadStats();
@@ -77,9 +94,12 @@ export default function DashboardPage() {
         <div className="lg:col-span-7 clay-card p-7 sm:p-8 flex flex-col justify-between relative overflow-hidden">
           <div className="absolute -right-10 -top-10 w-44 h-44 rounded-full bg-peach-200/35 blur-2xl pointer-events-none" />
           <div className="relative space-y-3">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-peach-100/90 border border-peach-300/40 text-peach-700 text-xs font-bold shadow-clay-sm">
-              <Feather className="w-3.5 h-3.5" />
-              <span>Góc luyện viết tay ấm áp</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-peach-100/90 border border-peach-300/40 text-peach-700 text-xs font-bold shadow-clay-sm">
+                <Feather className="w-3.5 h-3.5" />
+                <span>Góc luyện viết tay ấm áp</span>
+              </div>
+              <SyncingPill syncing={syncing} tone="peach" />
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-cocoa-900 tracking-tight leading-snug">
               Chinese Writing Practice

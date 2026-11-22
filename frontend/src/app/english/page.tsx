@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, fetchApiCached, getCachedApi, invalidateApiCache } from '@/lib/api';
 import { GEMINI_MODELS, useGeminiConfig } from '@/components/GeminiProvider';
+import { StudyPlanSkeleton, SyncingPill, useAiProgressStep } from '@/components/LoadingPrimitives';
 import { speakEnglish } from '@/lib/speech';
 import {
   Sparkles,
@@ -84,6 +85,7 @@ export default function EnglishStudyPage() {
   const { model: selectedModel, setModel: setSelectedModel } = useGeminiConfig();
   const [plan, setPlan] = useState<EnglishTodayPlan | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1);
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
 
@@ -116,20 +118,52 @@ export default function EnglishStudyPage() {
   const [completingDay, setCompletingDay] = useState(false);
   const [coachResult, setCoachResult] = useState<any>(null);
 
+  const dialogueStepLabel = useAiProgressStep(generatingDlg, [
+    'Đang gửi từ vựng cho Gemini...',
+    'Đang tạo hội thoại ngữ cảnh tự nhiên...',
+    'Đang dịch & hoàn thiện mẫu câu...',
+  ]);
+  const mixedStepLabel = useAiProgressStep(generatingMixed, [
+    'Đang tổng hợp từ mới, từ cũ & ngữ pháp...',
+    'AI đang thiết kế câu dịch & bài viết...',
+  ]);
+  const batchGradeStepLabel = useAiProgressStep(batchGrading, [
+    'Đang gửi bài viết lên Gemini...',
+    'AI đang chấm ngữ pháp & độ tự nhiên...',
+    'Đang tổng hợp nhận xét cá nhân hóa...',
+  ]);
+
   async function loadPlan(topic?: string, level?: string) {
-    setLoading(true);
+    const params = new URLSearchParams();
+    if (topic) params.set('topic', topic);
+    if (level) params.set('level', level);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const endpoint = `/english/today${qs}`;
+
+    const cached = getCachedApi<EnglishTodayPlan>(endpoint);
+    if (cached) {
+      setPlan(cached);
+      setLoading(false);
+      setSyncing(true);
+    } else if (!plan) {
+      setLoading(true);
+    } else {
+      setSyncing(true);
+    }
+
     try {
-      const params = new URLSearchParams();
-      if (topic) params.set('topic', topic);
-      if (level) params.set('level', level);
-      const qs = params.toString() ? `?${params.toString()}` : '';
-      const data = await fetchApi<EnglishTodayPlan>(`/english/today${qs}`);
+      const data = await fetchApiCached<EnglishTodayPlan>(endpoint);
       setPlan(data);
-      setDialogue(null);
+      if (topic !== undefined || level !== undefined) {
+        setDialogue(null);
+      }
     } catch (err: any) {
-      setBannerMsg(err.message || 'Không thể tải lộ trình tiếng Anh.');
+      if (!cached) {
+        setBannerMsg(err.message || 'Không thể tải lộ trình tiếng Anh.');
+      }
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   }
 
@@ -138,17 +172,19 @@ export default function EnglishStudyPage() {
   }, []);
 
   async function handleLevelChange(level: string) {
+    setReviewIdx(0);
+    setLearnedNewIds(new Set());
+    setGrammarDoneIds(new Set());
+    setMixedData(null);
+    setEvaluations({});
+    setBatchSummary(null);
+    setPlan((prev) => (prev ? { ...prev, activeLevel: level } : prev));
+    invalidateApiCache(['/english/today', '/english/summary']);
     try {
       await fetchApi('/english/profile', {
         method: 'PATCH',
         body: JSON.stringify({ currentLevel: level }),
       });
-      setReviewIdx(0);
-      setLearnedNewIds(new Set());
-      setGrammarDoneIds(new Set());
-      setMixedData(null);
-      setEvaluations({});
-      setBatchSummary(null);
       await loadPlan(undefined, level);
     } catch (err: any) {
       setBannerMsg(err.message);
@@ -158,6 +194,12 @@ export default function EnglishStudyPage() {
   async function handleDurationChange(minutes: number) {
     const newWordsPerDay = minutes <= 60 ? 12 : minutes <= 90 ? 15 : 20;
     const reviewWordsPerDay = minutes <= 60 ? 18 : minutes <= 90 ? 25 : 30;
+    setPlan((prev) =>
+      prev
+        ? { ...prev, profile: { ...prev.profile, dailyMinutesTarget: minutes, newWordsPerDay, reviewWordsPerDay } }
+        : prev,
+    );
+    invalidateApiCache(['/english/today', '/english/summary']);
     try {
       await fetchApi('/english/profile', {
         method: 'PATCH',
@@ -184,15 +226,27 @@ export default function EnglishStudyPage() {
   }
 
   async function handleSrs(id: string, quality: 'again' | 'hard' | 'good' | 'easy') {
-    await fetchApi('/english/srs-review', {
-      method: 'POST',
-      body: JSON.stringify({ id, quality }),
-    });
+    const prevIdx = reviewIdx;
     setReviewedIds((p) => new Set(p).add(id));
     setShowReviewAnswer(false);
     setReviewInput('');
     setReviewCheckResult(null);
     if (plan && reviewIdx < plan.reviewWords.length - 1) setReviewIdx((i) => i + 1);
+    invalidateApiCache(['/english/today', '/english/summary']);
+    try {
+      await fetchApi('/english/srs-review', {
+        method: 'POST',
+        body: JSON.stringify({ id, quality }),
+      });
+    } catch (err: any) {
+      setReviewedIds((p) => {
+        const next = new Set(p);
+        next.delete(id);
+        return next;
+      });
+      setReviewIdx(prevIdx);
+      setBannerMsg(err.message || 'Không thể lưu tiến độ ôn tập.');
+    }
   }
 
   async function handleDeepDive(id: string) {
@@ -211,14 +265,20 @@ export default function EnglishStudyPage() {
   }
 
   async function handleMarkNewLearned(id: string) {
+    setLearnedNewIds((p) => new Set(p).add(id));
+    invalidateApiCache(['/english/today', '/english/summary']);
     try {
       await fetchApi('/english/srs-review', {
         method: 'POST',
         body: JSON.stringify({ id, quality: 'good' }),
       });
-      setLearnedNewIds((p) => new Set(p).add(id));
     } catch (err: any) {
-      setBannerMsg(err.message);
+      setLearnedNewIds((p) => {
+        const next = new Set(p);
+        next.delete(id);
+        return next;
+      });
+      setBannerMsg(err.message || 'Không thể đánh dấu từ mới.');
     }
   }
 
@@ -246,13 +306,19 @@ export default function EnglishStudyPage() {
   }
 
   async function handleMarkGrammar(id: string) {
+    setGrammarDoneIds((p) => new Set(p).add(id));
+    invalidateApiCache(['/english/today', '/english/summary', '/english/grammar']);
     try {
       await fetchApi(`/english/grammar/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'mastered' }),
       });
-      setGrammarDoneIds((p) => new Set(p).add(id));
     } catch (err: any) {
+      setGrammarDoneIds((p) => {
+        const next = new Set(p);
+        next.delete(id);
+        return next;
+      });
       setBannerMsg(err.message);
     }
   }
@@ -402,14 +468,8 @@ export default function EnglishStudyPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto py-12">
-        <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
-          Đang chuẩn bị lộ trình Tiếng Anh cá nhân hóa cho bạn...
-        </div>
-      </div>
-    );
+  if (loading && !plan) {
+    return <StudyPlanSkeleton label="Đang chuẩn bị lộ trình Tiếng Anh cá nhân hóa cho bạn..." />;
   }
 
   if (!plan) return null;
@@ -438,9 +498,12 @@ export default function EnglishStudyPage() {
         <div className="absolute -right-12 -top-12 w-44 h-44 rounded-full bg-sage-200/40 blur-2xl pointer-events-none" />
         <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sage-100/90 border border-sage-200/70 text-sage-700 text-xs font-extrabold shadow-clay-sm mb-2.5">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>English Roadmap (A1 → B2) • Ngày thứ {plan.profile.currentDayNumber}</span>
+            <div className="flex items-center gap-2 flex-wrap mb-2.5">
+              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sage-100/90 border border-sage-200/70 text-sage-700 text-xs font-extrabold shadow-clay-sm">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>English Roadmap (A1 → B2) • Ngày thứ {plan.profile.currentDayNumber}</span>
+              </div>
+              <SyncingPill syncing={syncing} tone="sage" label="Đang cập nhật lộ trình..." />
             </div>
             <h1 className="text-xl sm:text-2xl font-extrabold text-cocoa-900 tracking-tight">
               Lộ trình Tiếng Anh cá nhân hóa — Bậc {LEVEL_LABELS[plan.activeLevel] || plan.activeLevel}
@@ -727,7 +790,7 @@ export default function EnglishStudyPage() {
                     className="clay-btn-sage inline-flex items-center gap-1.5 px-4 py-2.5 text-xs sm:text-sm"
                   >
                     <Sparkles className="w-4 h-4" />
-                    <span>{generatingDlg ? 'AI đang tạo...' : dialogue ? 'Tạo hội thoại khác' : 'Tạo hội thoại & mẫu câu (AI)'}</span>
+                    <span>{generatingDlg ? dialogueStepLabel || 'AI đang tạo...' : dialogue ? 'Tạo hội thoại khác' : 'Tạo hội thoại & mẫu câu (AI)'}</span>
                   </button>
                 </div>
               </div>
@@ -919,7 +982,7 @@ export default function EnglishStudyPage() {
               className="clay-btn-sage inline-flex items-center gap-2 px-5 py-3 text-sm shrink-0"
             >
               <Sparkles className="w-4 h-4" />
-              <span>{generatingMixed ? 'Đang soạn đề...' : mixedData ? 'Tạo đề mới' : 'Tạo bài tập kết hợp'}</span>
+              <span>{generatingMixed ? mixedStepLabel || 'Đang soạn đề...' : mixedData ? 'Tạo đề mới' : 'Tạo bài tập kết hợp'}</span>
             </button>
           </div>
 
@@ -1015,7 +1078,7 @@ export default function EnglishStudyPage() {
                   className="clay-btn-sage inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>{batchGrading ? 'AI đang chấm toàn bộ bài...' : 'AI Chấm tất cả các câu'}</span>
+                  <span>{batchGrading ? batchGradeStepLabel || 'AI đang chấm toàn bộ bài...' : 'AI Chấm tất cả các câu'}</span>
                 </button>
               </div>
             </div>

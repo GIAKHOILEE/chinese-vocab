@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, fetchApiCached, getCachedApi, invalidateApiCache } from '@/lib/api';
 import { GEMINI_MODELS, useGeminiConfig } from '@/components/GeminiProvider';
+import { StudyPlanSkeleton, SyncingPill, useAiProgressStep } from '@/components/LoadingPrimitives';
 import { speakChinese } from '@/lib/speech';
 import {
   Sparkles,
@@ -137,6 +138,7 @@ export default function StudyPage() {
   const { model: selectedModel, setModel: setSelectedModel } = useGeminiConfig();
   const [plan, setPlan] = useState<TodayPlan | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [activePhase, setActivePhase] = useState<1 | 2 | 3 | 4>(1);
   const [bannerMsg, setBannerMsg] = useState<string | null>(null);
 
@@ -169,33 +171,68 @@ export default function StudyPage() {
   const [completingDay, setCompletingDay] = useState(false);
   const [dailyCoachResult, setDailyCoachResult] = useState<any>(null);
 
+  const dialogueStepLabel = useAiProgressStep(generatingDialogue, [
+    'Đang gửi từ vựng cho Gemini...',
+    'Đang xây dựng hội thoại theo chủ đề...',
+    'Đang gắn Pinyin và nghĩa tiếng Việt...',
+  ]);
+  const mixedStepLabel = useAiProgressStep(generatingMixed, [
+    'Đang tổng hợp từ mới, từ cũ & ngữ pháp...',
+    'AI đang thiết kế câu dịch & đặt câu...',
+    'Đang hoàn thiện Pinyin chuẩn...',
+  ]);
+  const batchGradeStepLabel = useAiProgressStep(batchGrading, [
+    'Đang gửi bài viết lên Gemini...',
+    'AI đang phân tích ngữ pháp & từ vựng...',
+    'Đang tổng hợp điểm & lời khuyên cá nhân hóa...',
+  ]);
+
   async function loadPlan(topic?: string, level?: string) {
-    setLoading(true);
+    const params = new URLSearchParams();
+    if (topic) params.set('topic', topic);
+    if (level) params.set('level', level);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const endpoint = `/curriculum/today${qs}`;
+
+    const cached = getCachedApi<TodayPlan>(endpoint);
+    if (cached) {
+      setPlan(cached);
+      setLoading(false);
+      setSyncing(true);
+    } else if (!plan) {
+      setLoading(true);
+    } else {
+      setSyncing(true);
+    }
+
     try {
-      const params = new URLSearchParams();
-      if (topic) params.set('topic', topic);
-      if (level) params.set('level', level);
-      const qs = params.toString() ? `?${params.toString()}` : '';
-      const data = await fetchApi<TodayPlan>(`/curriculum/today${qs}`);
+      const data = await fetchApiCached<TodayPlan>(endpoint);
       setPlan(data);
-      setTopicDialogue(null);
+      if (topic !== undefined || level !== undefined) {
+        setTopicDialogue(null);
+      }
     } catch (err: any) {
-      setBannerMsg(err.message || 'Không thể tải lộ trình học hôm nay.');
+      if (!cached) {
+        setBannerMsg(err.message || 'Không thể tải lộ trình học hôm nay.');
+      }
     } finally {
       setLoading(false);
+      setSyncing(false);
     }
   }
 
   async function handleLevelChange(level: string) {
+    setReviewIdx(0);
+    setLearnedNewIds(new Set());
+    setGrammarDoneIds(new Set());
+    setMixedData(null);
+    setPlan((prev) => (prev ? { ...prev, activeLevel: level } : prev));
+    invalidateApiCache(['/curriculum/today', '/curriculum/summary']);
     try {
       await fetchApi('/curriculum/profile', {
         method: 'PATCH',
         body: JSON.stringify({ currentLevel: level }),
       });
-      setReviewIdx(0);
-      setLearnedNewIds(new Set());
-      setGrammarDoneIds(new Set());
-      setMixedData(null);
       await loadPlan(undefined, level);
     } catch (err: any) {
       setBannerMsg(err.message);
@@ -233,6 +270,12 @@ export default function StudyPage() {
     const newWordsPerDay = minutes <= 60 ? 10 : minutes <= 90 ? 15 : 20;
     const reviewWordsPerDay = minutes <= 60 ? 18 : minutes <= 90 ? 25 : 35;
     const grammarPerDay = minutes >= 120 ? 2 : 1;
+    setPlan((prev) =>
+      prev
+        ? { ...prev, profile: { ...prev.profile, dailyMinutesTarget: minutes, newWordsPerDay, reviewWordsPerDay, grammarPerDay } }
+        : prev,
+    );
+    invalidateApiCache(['/curriculum/today', '/curriculum/summary']);
     try {
       await fetchApi('/curriculum/profile', {
         method: 'PATCH',
@@ -301,20 +344,29 @@ export default function StudyPage() {
   }
 
   async function handleSrsSubmit(vocabId: string, quality: 'again' | 'hard' | 'good' | 'easy') {
+    const prevIdx = reviewIdx;
+    setReviewedIds((prev) => new Set(prev).add(vocabId));
+    setShowReviewAnswer(false);
+    setReviewInput('');
+    setReviewCheckResult(null);
+    if (plan && reviewIdx < plan.reviewWords.length - 1) {
+      setReviewIdx((i) => i + 1);
+    }
+    invalidateApiCache(['/curriculum/today', '/curriculum/summary']);
+
     try {
       await fetchApi('/curriculum/srs-review', {
         method: 'POST',
         body: JSON.stringify({ vocabularyId: vocabId, quality }),
       });
-      setReviewedIds((prev) => new Set(prev).add(vocabId));
-      setShowReviewAnswer(false);
-      setReviewInput('');
-      setReviewCheckResult(null);
-      if (plan && reviewIdx < plan.reviewWords.length - 1) {
-        setReviewIdx((i) => i + 1);
-      }
     } catch (err: any) {
-      setBannerMsg(err.message);
+      setReviewedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(vocabId);
+        return next;
+      });
+      setReviewIdx(prevIdx);
+      setBannerMsg(err.message || 'Không thể lưu kết quả ôn tập, vui lòng thử lại.');
     }
   }
 
@@ -334,26 +386,38 @@ export default function StudyPage() {
   }
 
   async function handleMarkNewWordLearned(vocabId: string) {
+    setLearnedNewIds((prev) => new Set(prev).add(vocabId));
+    invalidateApiCache(['/curriculum/today', '/curriculum/summary']);
     try {
       await fetchApi('/curriculum/srs-review', {
         method: 'POST',
         body: JSON.stringify({ vocabularyId: vocabId, quality: 'good' }),
       });
-      setLearnedNewIds((prev) => new Set(prev).add(vocabId));
     } catch (err: any) {
-      setBannerMsg(err.message);
+      setLearnedNewIds((prev) => {
+        const next = new Set(prev);
+        next.delete(vocabId);
+        return next;
+      });
+      setBannerMsg(err.message || 'Không thể đánh dấu từ mới, vui lòng thử lại.');
     }
   }
 
   async function handleMarkGrammar(grammarId: string, status: 'learning' | 'mastered') {
+    setGrammarDoneIds((prev) => new Set(prev).add(grammarId));
+    invalidateApiCache(['/curriculum/today', '/curriculum/summary', '/curriculum/grammar']);
     try {
       await fetchApi(`/curriculum/grammar/${grammarId}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       });
-      setGrammarDoneIds((prev) => new Set(prev).add(grammarId));
     } catch (err: any) {
-      setBannerMsg(err.message);
+      setGrammarDoneIds((prev) => {
+        const next = new Set(prev);
+        next.delete(grammarId);
+        return next;
+      });
+      setBannerMsg(err.message || 'Không thể cập nhật trạng thái ngữ pháp.');
     }
   }
 
@@ -515,15 +579,9 @@ export default function StudyPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="max-w-4xl mx-auto py-12">
-          <div className="clay-card p-10 text-center text-cocoa-500 font-semibold">
-            Đang chuẩn bị giáo trình HSK 1→3 (3.0) cá nhân hóa cho bạn...
-          </div>
-        </div>
-      );
-    }
+  if (loading && !plan) {
+    return <StudyPlanSkeleton label="Đang chuẩn bị giáo trình HSK 1→3 (3.0) cá nhân hóa cho bạn..." />;
+  }
 
     if (!plan) return null;
 
@@ -536,9 +594,12 @@ export default function StudyPage() {
           <div className="absolute -right-12 -top-12 w-44 h-44 rounded-full bg-peach-200/30 blur-2xl pointer-events-none" />
           <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-peach-100/90 border border-peach-200/70 text-peach-700 text-xs font-extrabold shadow-clay-sm mb-2.5">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Giáo trình {plan.activeLevel} (HSK 3.0) • Ngày thứ {plan.profile.currentDayNumber}</span>
+              <div className="flex items-center gap-2 flex-wrap mb-2.5">
+                <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-peach-100/90 border border-peach-200/70 text-peach-700 text-xs font-extrabold shadow-clay-sm">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Giáo trình {plan.activeLevel} (HSK 3.0) • Ngày thứ {plan.profile.currentDayNumber}</span>
+                </div>
+                <SyncingPill syncing={syncing} tone="peach" label="Đang cập nhật lộ trình..." />
               </div>
               <h1 className="text-xl sm:text-2xl font-extrabold text-cocoa-900 tracking-tight">
                 {HSK_LABELS[plan.activeLevel] || plan.activeLevel} — Lộ trình {plan.profile.dailyMinutesTarget} phút/ngày
@@ -902,7 +963,7 @@ export default function StudyPage() {
                     <Sparkles className="w-4 h-4" />
                     <span>
                       {generatingDialogue
-                        ? 'AI đang tạo hội thoại...'
+                        ? dialogueStepLabel || 'AI đang tạo hội thoại...'
                         : topicDialogue
                           ? 'Tạo hội thoại khác'
                           : 'Tạo hội thoại & mẫu câu (AI)'}
@@ -1216,7 +1277,7 @@ export default function StudyPage() {
             >
               <Sparkles className="w-4 h-4" />
               <span>
-                {generatingMixed ? 'AI đang soạn đề...' : mixedData ? 'Tạo bộ câu mới' : 'Tạo bài tập kết hợp'}
+                {generatingMixed ? mixedStepLabel || 'AI đang soạn đề...' : mixedData ? 'Tạo bộ câu mới' : 'Tạo bài tập kết hợp'}
               </span>
             </button>
           </div>
@@ -1357,7 +1418,7 @@ export default function StudyPage() {
                   className="clay-btn-peach inline-flex items-center justify-center gap-2 px-6 py-3.5 text-sm"
                 >
                   <Sparkles className="w-4 h-4" />
-                  <span>{batchGrading ? 'AI đang chấm toàn bộ bài...' : 'AI Chấm tất cả các câu'}</span>
+                  <span>{batchGrading ? batchGradeStepLabel || 'AI đang chấm toàn bộ bài...' : 'AI Chấm tất cả các câu'}</span>
                 </button>
               </div>
             </div>

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { fetchApi } from '@/lib/api';
+import { fetchApi, fetchApiCached, getCachedApi, invalidateApiCache, setCachedApi } from '@/lib/api';
+import { CardListSkeleton, SyncingPill } from '@/components/LoadingPrimitives';
 import { speakEnglish } from '@/lib/speech';
 import { GraduationCap, Volume2, Sparkles, CheckCircle2, AlertTriangle } from 'lucide-react';
 
@@ -19,6 +20,8 @@ interface EnglishGrammarPoint {
 
 export default function EnglishGrammarPage() {
   const [list, setList] = useState<EnglishGrammarPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [levelFilter, setLevelFilter] = useState<'ALL' | 'A1' | 'A2' | 'B1' | 'B2'>('ALL');
   const [inputs, setInputs] = useState<Record<string, string>>({});
   const [evals, setEvals] = useState<Record<string, any>>({});
@@ -26,20 +29,38 @@ export default function EnglishGrammarPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchApi<EnglishGrammarPoint[]>('/english/grammar')
+    const cached = getCachedApi<EnglishGrammarPoint[]>('/english/grammar');
+    if (cached) {
+      setList(cached);
+      setLoading(false);
+      setSyncing(true);
+    }
+    fetchApiCached<EnglishGrammarPoint[]>('/english/grammar')
       .then(setList)
-      .catch((err: any) => setErrorMsg(err?.message || 'Không thể tải danh sách ngữ pháp tiếng Anh.'));
+      .catch((err: any) => {
+        if (!cached) setErrorMsg(err?.message || 'Không thể tải danh sách ngữ pháp tiếng Anh.');
+      })
+      .finally(() => {
+        setLoading(false);
+        setSyncing(false);
+      });
   }, []);
 
   async function handleStatus(id: string, status: 'learning' | 'mastered') {
     setErrorMsg(null);
+    const previousList = list;
+    const optimisticList = list.map((g) => (g.id === id ? { ...g, status } : g));
+    setList(optimisticList);
+    setCachedApi('/english/grammar', optimisticList);
+    invalidateApiCache(['/english/summary', '/english/today']);
     try {
       await fetchApi(`/english/grammar/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       });
-      setList((prev) => prev.map((g) => (g.id === id ? { ...g, status } : g)));
     } catch (err: any) {
+      setList(previousList);
+      setCachedApi('/english/grammar', previousList);
       setErrorMsg(err?.message || 'Không thể cập nhật trạng thái ngữ pháp.');
     }
   }
@@ -78,6 +99,7 @@ export default function EnglishGrammarPage() {
               <GraduationCap className="w-5 h-5" />
             </span>
             <span>Ngữ pháp Tiếng Anh (A1 → B2)</span>
+            <SyncingPill syncing={syncing} tone="sage" />
           </h1>
           <p className="text-sm text-cocoa-600 mt-1.5">
             Lộ trình từ cơ bản nhất (A1) đến trung cao cấp (B2) với ví dụ phát âm và AI chấm câu trực tiếp.
@@ -108,7 +130,10 @@ export default function EnglishGrammarPage() {
         </div>
       )}
 
-      <div className="space-y-5">
+      {loading ? (
+        <CardListSkeleton count={4} label="Đang tải danh sách ngữ pháp tiếng Anh..." />
+      ) : (
+        <div className="space-y-5">
         {filtered.map((g) => {
           const ev = evals[g.id];
           return (
@@ -194,6 +219,7 @@ export default function EnglishGrammarPage() {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
