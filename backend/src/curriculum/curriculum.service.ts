@@ -242,6 +242,7 @@ export class CurriculumService {
       grammarTotal,
       grammarMastered,
       recentLogs,
+      totalLogs,
     ] = await Promise.all([
       this.prisma.vocabulary.count({ where: { ...visibleFilter, level: 'HSK1' } }),
       this.prisma.vocabulary.count({ where: { ...visibleFilter, level: 'HSK2' } }),
@@ -262,8 +263,9 @@ export class CurriculumService {
       this.prisma.studyLog.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
-        take: 7,
+        take: 10,
       }),
+      this.prisma.studyLog.count({ where: { userId } }),
     ]);
 
     const levelTotals: Record<HskLevel, number> = {
@@ -308,7 +310,16 @@ export class CurriculumService {
         grammarMastered,
       },
       recentLogs,
+      totalLogs,
     };
+  }
+
+  async getStudyLogs(userId: string, limit = 100) {
+    return this.prisma.studyLog.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
   }
 
   async getTodayPlan(userId: string, requestedTopic?: string, requestedLevel?: string) {

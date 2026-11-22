@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { fetchApiCached, getCachedApi, prefetchApi } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { SyncingPill } from '@/components/LoadingPrimitives';
+import DailyFeedbackSection, { DailyStudyLog } from '@/components/DailyFeedbackSection';
 import {
   BookOpen,
   PenTool,
@@ -41,6 +42,8 @@ interface CurriculumSummary {
     grammarTotal: number;
     grammarMastered: number;
   };
+  recentLogs?: DailyStudyLog[];
+  totalLogs?: number;
 }
 
 export default function DashboardPage() {
@@ -287,6 +290,16 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Kết quả & Nhận xét từng ngày */}
+      <DailyFeedbackSection
+        tone="peach"
+        recentLogs={curriculum?.recentLogs ?? []}
+        totalLogs={curriculum?.totalLogs}
+        allLogsEndpoint="/curriculum/logs"
+        studyHref="/study"
+        loading={loading && !curriculum}
+      />
 
       {/* Bento Quick Actions */}
       <div className="clay-card p-6 sm:p-7 space-y-5">

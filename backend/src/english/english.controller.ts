@@ -11,7 +11,6 @@ import {
   EnglishSrsReviewDto,
   EnglishTopicDialogueDto,
   EnglishWordDeepDiveDto,
-  SubmitPlacementTestDto,
   UpdateEnglishProfileDto,
 } from './dto/english.dto';
 import { UpdateGrammarStatusDto } from '../curriculum/dto/curriculum.dto';
@@ -26,26 +25,18 @@ export class EnglishController {
     return this.englishService.getSummary(user.id);
   }
 
+  @Get('logs')
+  getStudyLogs(@CurrentUser() user: AuthUser, @Query('limit') limit?: string) {
+    const parsedLimit = limit ? Math.min(Math.max(parseInt(limit, 10) || 0, 1), 365) : 100;
+    return this.englishService.getStudyLogs(user.id, parsedLimit);
+  }
+
   @Patch('profile')
   updateProfile(
     @CurrentUser() user: AuthUser,
     @Body() body: UpdateEnglishProfileDto,
   ) {
     return this.englishService.updateProfile(user.id, body);
-  }
-
-  @Get('placement-test')
-  getPlacementTest() {
-    return this.englishService.getPlacementTest();
-  }
-
-  @Throttle({ default: { limit: 15, ttl: 60_000 } })
-  @Post('placement-submit')
-  submitPlacementTest(
-    @CurrentUser() user: AuthUser,
-    @Body() body: SubmitPlacementTestDto,
-  ) {
-    return this.englishService.submitPlacementTest(user.id, body);
   }
 
   @Get('today')

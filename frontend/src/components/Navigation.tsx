@@ -14,7 +14,6 @@ import {
   GraduationCap,
   Sparkles,
   Languages,
-  ClipboardCheck,
   Gamepad2,
   LogOut,
   User,
@@ -56,7 +55,6 @@ export default function Navigation() {
     { href: '/english/dashboard', label: 'Dashboard EN', icon: LayoutDashboard },
     { href: '/english', label: 'Lộ trình A1→B2', icon: Sparkles },
     { href: '/english/games', label: 'Mini-Game', icon: Gamepad2 },
-    { href: '/english/placement', label: 'Test trình độ', icon: ClipboardCheck },
     { href: '/english/grammar', label: 'Ngữ pháp EN', icon: GraduationCap },
   ];
 

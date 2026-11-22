@@ -5,7 +5,6 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumber,
-  IsObject,
   IsOptional,
   IsString,
   Max,
@@ -48,20 +47,6 @@ export class UpdateEnglishProfileDto {
   @IsString()
   @MaxLength(80)
   preferredModel?: string;
-}
-
-export class SubmitPlacementTestDto {
-  @IsObject()
-  answers: Record<string, number>;
-
-  @IsOptional()
-  @IsObject()
-  writingSamples?: Record<string, string>;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  model?: string;
 }
 
 export class EnglishSrsReviewDto {

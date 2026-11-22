@@ -5,11 +5,11 @@ import Link from 'next/link';
 import { fetchApiCached, getCachedApi, prefetchApi } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { SyncingPill } from '@/components/LoadingPrimitives';
+import DailyFeedbackSection from '@/components/DailyFeedbackSection';
 import {
   BookOpen,
   GraduationCap,
   Sparkles,
-  ClipboardCheck,
   Gamepad2,
   ArrowRight,
   RefreshCw,
@@ -74,11 +74,11 @@ export default function EnglishDashboardPage() {
               <ArrowRight className="w-4 h-4" />
             </Link>
             <Link
-              href="/english/placement"
+              href="/english/games"
               className="clay-btn-cream inline-flex items-center gap-2 px-5 py-3 text-sm"
             >
-              <ClipboardCheck className="w-4 h-4 text-sage-600" />
-              <span>Test trình độ</span>
+              <Gamepad2 className="w-4 h-4 text-sage-600" />
+              <span>Mini-Game</span>
             </Link>
           </div>
         </div>
@@ -104,15 +104,15 @@ export default function EnglishDashboardPage() {
 
           <div className="relative grid grid-cols-2 gap-3 my-5">
             <div className="bg-linen-50/80 rounded-[20px] p-3.5 border border-sage-200/60 shadow-clay-sm">
-              <div className="text-[11px] font-bold text-cocoa-500 uppercase">Thời lượng</div>
+              <div className="text-[11px] font-bold text-cocoa-500 uppercase">Mục tiêu</div>
               <div className="text-lg font-extrabold text-cocoa-900 mt-0.5">
                 {summary?.profile?.dailyMinutesTarget ?? 60} phút/ngày
               </div>
             </div>
             <div className="bg-linen-50/80 rounded-[20px] p-3.5 border border-sage-200/60 shadow-clay-sm">
-              <div className="text-[11px] font-bold text-cocoa-500 uppercase">Đầu vào</div>
+              <div className="text-[11px] font-bold text-cocoa-500 uppercase">Cần ôn SRS</div>
               <div className="text-lg font-extrabold text-sage-700 mt-0.5">
-                {summary?.profile?.placementDone ? `${summary.profile.placementScore ?? 0}%` : 'Chưa test'}
+                {summary?.stats?.dueReviewCount ?? 0} từ
               </div>
             </div>
           </div>
@@ -198,12 +198,15 @@ export default function EnglishDashboardPage() {
               </span>
             </div>
             <h2 className="text-2xl font-extrabold tracking-tight">
-              {summary.profile.placementDone
-                ? `Lộ trình bậc ${summary.profile.currentLevel} (Điểm đầu vào: ${summary.profile.placementScore ?? 0}%)`
-                : 'Chưa kiểm tra trình độ đầu vào (Mặc định A1)'}
+              Lộ trình Tiếng Anh A1 → B2 (Bậc {summary.profile.currentLevel})
             </h2>
             <p className="text-sm text-sage-50/95">
-              Học 4 chặng mỗi ngày hoặc chơi Mini-Game để phản xạ từ vựng nhanh hơn.
+              Tổng kho: <strong>{summary.stats?.totalWords ?? 0}</strong> từ • Cần ôn:{' '}
+              <strong>{summary.stats?.dueReviewCount ?? 0}</strong> từ • Ngữ pháp:{' '}
+              <strong>
+                {summary.stats?.grammarMastered ?? 0}/{summary.stats?.grammarTotal ?? 0}
+              </strong>{' '}
+              • Học 4 chặng mỗi ngày cùng AI Tutor.
             </p>
           </div>
           <div className="relative flex gap-2.5 flex-wrap shrink-0">
@@ -225,6 +228,16 @@ export default function EnglishDashboardPage() {
         </div>
       )}
 
+      {/* Kết quả & Nhận xét từng ngày */}
+      <DailyFeedbackSection
+        tone="sage"
+        recentLogs={summary?.recentLogs ?? []}
+        totalLogs={summary?.totalLogs}
+        allLogsEndpoint="/english/logs"
+        studyHref="/english"
+        loading={loading && !summary}
+      />
+
       {/* Thao tác nhanh Tiếng Anh */}
       <div className="clay-card p-6 sm:p-7 space-y-5">
         <div className="flex items-center justify-between">
@@ -234,16 +247,16 @@ export default function EnglishDashboardPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Link
-            href="/english/placement"
-            className="clay-card-oat hover:bg-peach-50/80 hover:border-peach-300/50 p-4 rounded-[24px] flex items-center justify-between text-cocoa-800 hover:text-peach-700 transition-all duration-200 hover:-translate-y-0.5 group"
+            href="/english"
+            className="clay-card-oat hover:bg-sage-50/80 hover:border-sage-300/50 p-4 rounded-[24px] flex items-center justify-between text-cocoa-800 hover:text-sage-700 transition-all duration-200 hover:-translate-y-0.5 group"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-[16px] bg-linen-50 border border-cocoa-400/15 shadow-clay-sm flex items-center justify-center text-peach-600">
-                <ClipboardCheck className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-[16px] bg-linen-50 border border-cocoa-400/15 shadow-clay-sm flex items-center justify-center text-sage-600">
+                <Sparkles className="w-5 h-5" />
               </div>
               <div>
-                <div className="font-bold text-sm">Test trình độ A1→B2</div>
-                <div className="text-[11px] text-cocoa-500">Xếp bậc chuẩn bằng AI</div>
+                <div className="font-bold text-sm">Lộ trình học hôm nay</div>
+                <div className="text-[11px] text-cocoa-500">Từ mới, SRS & AI chấm câu</div>
               </div>
             </div>
             <ArrowRight className="w-4 h-4 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition" />

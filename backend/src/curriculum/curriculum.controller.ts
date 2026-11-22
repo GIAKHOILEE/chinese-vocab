@@ -25,6 +25,12 @@ export class CurriculumController {
     return this.curriculumService.getDashboardSummary(user.id);
   }
 
+  @Get('logs')
+  getStudyLogs(@CurrentUser() user: AuthUser, @Query('limit') limit?: string) {
+    const parsedLimit = limit ? Math.min(Math.max(parseInt(limit, 10) || 0, 1), 365) : 100;
+    return this.curriculumService.getStudyLogs(user.id, parsedLimit);
+  }
+
   @Get('today')
   getTodayPlan(
     @CurrentUser() user: AuthUser,

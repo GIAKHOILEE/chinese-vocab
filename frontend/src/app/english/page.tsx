@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { fetchApi, fetchApiCached, getCachedApi, invalidateApiCache } from '@/lib/api';
 import { GEMINI_MODELS, useGeminiConfig } from '@/components/GeminiProvider';
 import { StudyPlanSkeleton, SyncingPill, useAiProgressStep } from '@/components/LoadingPrimitives';
@@ -20,7 +19,6 @@ import {
   ArrowRight,
   AlertTriangle,
   Award,
-  ClipboardCheck,
 } from 'lucide-react';
 
 interface EnglishVocabItem {
@@ -50,8 +48,6 @@ interface EnglishGrammarItem {
 interface EnglishTodayPlan {
   profile: {
     currentLevel: string;
-    placementDone: boolean;
-    placementScore?: number | null;
     dailyMinutesTarget: number;
     newWordsPerDay: number;
     reviewWordsPerDay: number;
@@ -461,6 +457,7 @@ export default function EnglishStudyPage() {
         }),
       });
       setCoachResult(res.aiCoachingFeedback);
+      invalidateApiCache(['/english/summary', '/english/today', '/english/logs']);
     } catch (err: any) {
       setBannerMsg(err.message);
     } finally {
@@ -477,22 +474,6 @@ export default function EnglishStudyPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-12">
-      {/* Banner nhắc test đầu vào nếu chưa làm */}
-      {!plan.profile.placementDone && (
-        <div className="clay-card-honey p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="text-sm text-honey-700">
-            <strong>Bạn chưa kiểm tra trình độ đầu vào!</strong> Làm bài test nhanh 3 phút (A1 → B2) để hệ thống xếp đúng bậc xuất phát cho bạn.
-          </div>
-          <Link
-            href="/english/placement"
-            className="clay-btn-peach inline-flex items-center gap-1.5 px-4 py-2.5 text-xs shrink-0"
-          >
-            <ClipboardCheck className="w-4 h-4" />
-            <span>Test trình độ ngay</span>
-          </Link>
-        </div>
-      )}
-
       {/* Header */}
       <div className="clay-card p-6 sm:p-7 space-y-5 relative overflow-hidden">
         <div className="absolute -right-12 -top-12 w-44 h-44 rounded-full bg-sage-200/40 blur-2xl pointer-events-none" />

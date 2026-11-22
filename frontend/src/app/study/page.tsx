@@ -572,6 +572,7 @@ export default function StudyPage() {
         }),
       });
       setDailyCoachResult(res.aiCoachingFeedback);
+      invalidateApiCache(['/curriculum/summary', '/curriculum/today', '/curriculum/logs']);
     } catch (err: any) {
       setBannerMsg(err.message);
     } finally {

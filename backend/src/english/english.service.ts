@@ -6,29 +6,6 @@ import { ENGLISH_GRAMMAR_DATA } from './data/english-grammar.data';
 
 const LEVEL_ORDER = ['A1', 'A2', 'B1', 'B2'] as const;
 
-export interface PlacementQuestion {
-  id: string;
-  level: 'A1' | 'A2' | 'B1' | 'B2';
-  question: string;
-  options: string[];
-  correctIndex: number;
-}
-
-const PLACEMENT_QUESTIONS: PlacementQuestion[] = [
-  { id: 'q1', level: 'A1', question: 'She ___ to work by bus every morning.', options: ['go', 'goes', 'going', 'is go'], correctIndex: 1 },
-  { id: 'q2', level: 'A1', question: '___ a book and two pens on my desk.', options: ['Have', 'There are', 'There is', 'It has'], correctIndex: 2 },
-  { id: 'q3', level: 'A1', question: 'Right now, they ___ English in the living room.', options: ['study', 'are studying', 'studied', 'studying'], correctIndex: 1 },
-  { id: 'q4', level: 'A2', question: 'Yesterday I ___ to the supermarket because I needed some fruit.', options: ['go', 'have gone', 'went', 'was go'], correctIndex: 2 },
-  { id: 'q5', level: 'A2', question: 'This train is much ___ than the old bus.', options: ['convenient', 'more convenient', 'most convenient', 'convenienter'], correctIndex: 1 },
-  { id: 'q6', level: 'A2', question: 'Look at those dark clouds! It ___ rain soon.', options: ['is going to', 'will to', 'goes to', 'was'], correctIndex: 0 },
-  { id: 'q7', level: 'B1', question: 'I ___ in Ho Chi Minh City since 2021.', options: ['live', 'am living', 'have lived', 'lived'], correctIndex: 2 },
-  { id: 'q8', level: 'B1', question: 'If I ___ more free time, I would practice speaking every day.', options: ['have', 'had', 'will have', 'would have'], correctIndex: 1 },
-  { id: 'q9', level: 'B1', question: 'The report ___ by the manager before the meeting started.', options: ['reviewed', 'was reviewed', 'is reviewing', 'has review'], correctIndex: 1 },
-  { id: 'q10', level: 'B2', question: 'She looks exhausted; she ___ all night for the presentation.', options: ['must work', 'should work', 'must have worked', 'can have worked'], correctIndex: 2 },
-  { id: 'q11', level: 'B2', question: '___ the new system, the team became significantly more efficient.', options: ['Having implemented', 'Implemented', 'To implement', 'Have implemented'], correctIndex: 0 },
-  { id: 'q12', level: 'B2', question: 'If they had negotiated more carefully, they ___ that consequence.', options: ['would avoid', 'will avoid', 'would have avoided', 'had avoided'], correctIndex: 2 },
-];
-
 @Injectable()
 export class EnglishService {
   private seedingPromise: Promise<void> | null = null;
@@ -201,7 +178,7 @@ export class EnglishService {
     const now = new Date();
     const visibleFilter = { OR: [{ ownerId: null }, { ownerId: userId }] };
 
-    const [byLevel, userProgresses, dueReviewCount, grammarTotal, grammarMastered, recentLogs] =
+    const [byLevel, userProgresses, dueReviewCount, grammarTotal, grammarMastered, recentLogs, totalLogs] =
       await Promise.all([
         this.prisma.englishVocab.groupBy({
           by: ['cefrLevel'],
@@ -220,8 +197,9 @@ export class EnglishService {
         this.prisma.englishStudyLog.findMany({
           where: { userId },
           orderBy: { createdAt: 'desc' },
-          take: 5,
+          take: 10,
         }),
+        this.prisma.englishStudyLog.count({ where: { userId } }),
       ]);
 
     const levelCounts: Record<string, number> = { A1: 0, A2: 0, B1: 0, B2: 0 };
@@ -257,120 +235,16 @@ export class EnglishService {
         grammarMastered,
       },
       recentLogs,
+      totalLogs,
     };
   }
 
-  getPlacementTest() {
-    return {
-      questions: PLACEMENT_QUESTIONS.map(({ id, level, question, options }) => ({
-        id,
-        level,
-        question,
-        options,
-      })),
-      writingPrompts: [
-        {
-          id: 'w1',
-          levelHint: 'A1-A2',
-          vietnamese: 'Hôm qua tôi đã đi siêu thị và mua một ít hoa quả tươi.',
-        },
-        {
-          id: 'w2',
-          levelHint: 'B1-B2',
-          vietnamese: 'Nếu tôi có nhiều thời gian hơn, tôi sẽ luyện nói tiếng Anh mỗi ngày để tự tin hơn.',
-        },
-      ],
-    };
-  }
-
-  async submitPlacementTest(
-    userId: string,
-    body: {
-      answers: Record<string, number>;
-      writingSamples?: Record<string, string>;
-      model?: string;
-    },
-  ) {
-    let correctTotal = 0;
-    const byLevel: Record<string, { correct: number; total: number }> = {
-      A1: { correct: 0, total: 0 },
-      A2: { correct: 0, total: 0 },
-      B1: { correct: 0, total: 0 },
-      B2: { correct: 0, total: 0 },
-    };
-
-    for (const q of PLACEMENT_QUESTIONS) {
-      byLevel[q.level].total++;
-      if (body.answers?.[q.id] === q.correctIndex) {
-        correctTotal++;
-        byLevel[q.level].correct++;
-      }
-    }
-
-    const scorePercent = Math.round((correctTotal / PLACEMENT_QUESTIONS.length) * 100);
-    let recommendedLevel: 'A1' | 'A2' | 'B1' | 'B2' = 'A1';
-    if (byLevel.A1.correct >= 2 && byLevel.A2.correct >= 2) {
-      recommendedLevel = 'A2';
-      if (byLevel.B1.correct >= 2) {
-        recommendedLevel = 'B1';
-        if (byLevel.B2.correct >= 2) {
-          recommendedLevel = 'B2';
-        }
-      }
-    }
-
-    let aiAssessment = `Bạn đạt ${correctTotal}/${PLACEMENT_QUESTIONS.length} câu (${scorePercent}%). Mức xuất phát phù hợp nhất là ${recommendedLevel}.`;
-    const sample1 = body.writingSamples?.w1?.trim() || '';
-    const sample2 = body.writingSamples?.w2?.trim() || '';
-
-    if (sample1 || sample2) {
-      try {
-        const prompt = `Học viên Việt Nam vừa làm bài kiểm tra đầu vào tiếng Anh (từ A1 đến B2):
-- Điểm trắc nghiệm: ${correctTotal}/${PLACEMENT_QUESTIONS.length} (${scorePercent}%)
-- Kết quả từng bậc: A1 (${byLevel.A1.correct}/3), A2 (${byLevel.A2.correct}/3), B1 (${byLevel.B1.correct}/3), B2 (${byLevel.B2.correct}/3)
-- Câu dịch 1 (A1-A2): "${sample1 || 'Bỏ trống'}"
-- Câu dịch 2 (B1-B2): "${sample2 || 'Bỏ trống'}"
-
-Hãy đánh giá ngắn gọn trình độ thực tế của học viên và đưa ra lộ trình cá nhân hóa từ mức này lên B1-B2 bằng tiếng Việt. Trả về STRICT JSON:
-{
-  "recommendedLevel": "A1 hoặc A2 hoặc B1 hoặc B2",
-  "assessment": "Nhận xét chi tiết điểm mạnh/điểm yếu và lộ trình học phù hợp"
-}`;
-        const raw = await this.geminiService.generateText(prompt, {
-          model: body.model,
-          systemInstruction: 'You are an English CEFR placement evaluator for Vietnamese learners. Output valid JSON only.',
-          temperature: 0.3,
-        });
-        const parsed = this.parseJsonSafe<{ recommendedLevel: 'A1' | 'A2' | 'B1' | 'B2'; assessment: string }>(raw);
-        if (LEVEL_ORDER.includes(parsed.recommendedLevel)) {
-          recommendedLevel = parsed.recommendedLevel;
-        }
-        if (parsed.assessment) {
-          aiAssessment = parsed.assessment;
-        }
-      } catch {
-        // Keep heuristic assessment
-      }
-    }
-
-    await this.getOrCreateProfile(userId);
-    await this.prisma.englishProfile.update({
+  async getStudyLogs(userId: string, limit = 100) {
+    return this.prisma.englishStudyLog.findMany({
       where: { userId },
-      data: {
-        currentLevel: recommendedLevel,
-        placementDone: true,
-        placementScore: scorePercent,
-      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
     });
-
-    return {
-      recommendedLevel,
-      scorePercent,
-      correctTotal,
-      totalQuestions: PLACEMENT_QUESTIONS.length,
-      byLevel,
-      assessment: aiAssessment,
-    };
   }
 
   async getTodayPlan(userId: string, requestedTopic?: string, requestedLevel?: string) {
