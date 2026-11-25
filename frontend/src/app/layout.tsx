@@ -3,6 +3,7 @@ import Navigation from '@/components/Navigation';
 import { AuthProvider } from '@/components/AuthProvider';
 import { GeminiProvider } from '@/components/GeminiProvider';
 import { SlowServerBanner } from '@/components/LoadingPrimitives';
+import TabInputAutoCenter from '@/components/TabInputAutoCenter';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -33,6 +34,7 @@ export default function RootLayout({
               {children}
             </main>
             <SlowServerBanner />
+            <TabInputAutoCenter />
           </GeminiProvider>
         </AuthProvider>
       </body>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { fetchApi, fetchApiCached, getCachedApi, invalidateApiCache } from '@/lib/api';
 import { GEMINI_MODELS, useGeminiConfig } from '@/components/GeminiProvider';
 import { StudyPlanSkeleton, SyncingPill, useAiProgressStep } from '@/components/LoadingPrimitives';
@@ -169,7 +169,11 @@ export default function StudyPage() {
   const [batchGrading, setBatchGrading] = useState(false);
   const [batchSummary, setBatchSummary] = useState<{ overallScore: number; overallComment: string } | null>(null);
   const [completingDay, setCompletingDay] = useState(false);
+  const [savedDayNumber, setSavedDayNumber] = useState<number | null>(null);
   const [dailyCoachResult, setDailyCoachResult] = useState<any>(null);
+  const completingDayRef = useRef(false);
+  const reviewInputRef = useRef<HTMLInputElement>(null);
+  const hasAutoFocusedReviewRef = useRef(false);
 
   const dialogueStepLabel = useAiProgressStep(generatingDialogue, [
     'Đang gửi từ vựng cho Gemini...',
@@ -223,6 +227,9 @@ export default function StudyPage() {
 
   async function handleLevelChange(level: string) {
     setReviewIdx(0);
+    setShowReviewAnswer(false);
+    setReviewInput('');
+    setReviewCheckResult(null);
     setLearnedNewIds(new Set());
     setGrammarDoneIds(new Set());
     setMixedData(null);
@@ -265,6 +272,23 @@ export default function StudyPage() {
   useEffect(() => {
     loadPlan();
   }, []);
+
+  const currentReviewWordId = plan?.reviewWords[reviewIdx]?.id;
+
+  useEffect(() => {
+    if (activePhase !== 1 || showReviewAnswer || !currentReviewWordId) return;
+    const activeEl = document.activeElement;
+    if (
+      activeEl &&
+      activeEl !== reviewInputRef.current &&
+      (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.tagName === 'SELECT')
+    ) {
+      return;
+    }
+    const isInitialMountFocus = !hasAutoFocusedReviewRef.current;
+    hasAutoFocusedReviewRef.current = true;
+    reviewInputRef.current?.focus({ preventScroll: isInitialMountFocus });
+  }, [activePhase, showReviewAnswer, currentReviewWordId, reviewIdx]);
 
   async function handleChangeTargetMinutes(minutes: number) {
     const newWordsPerDay = minutes <= 60 ? 10 : minutes <= 90 ? 15 : 20;
@@ -547,8 +571,10 @@ export default function StudyPage() {
   }
 
   async function handleCompleteDay() {
-    if (!plan) return;
+    if (!plan || completingDayRef.current || savedDayNumber !== null) return;
+    completingDayRef.current = true;
     setCompletingDay(true);
+    setBannerMsg(null);
     const evalValues = Object.values(evaluations);
     const avgScore =
       evalValues.length > 0
@@ -571,11 +597,13 @@ export default function StudyPage() {
           model: selectedModel,
         }),
       });
-      setDailyCoachResult(res.aiCoachingFeedback);
+      setSavedDayNumber(typeof res?.dayNumber === 'number' ? res.dayNumber : plan.profile.currentDayNumber);
+      setDailyCoachResult(res?.aiCoachingFeedback ?? null);
       invalidateApiCache(['/curriculum/summary', '/curriculum/today', '/curriculum/logs']);
     } catch (err: any) {
-      setBannerMsg(err.message);
+      setBannerMsg(err.message || 'Không thể lưu buổi học, vui lòng thử lại.');
     } finally {
+      completingDayRef.current = false;
       setCompletingDay(false);
     }
   }
@@ -771,6 +799,7 @@ export default function StudyPage() {
 
               <div className="flex flex-col sm:flex-row gap-2.5">
                 <input
+                  ref={reviewInputRef}
                   type="text"
                   value={reviewInput}
                   onChange={(e) => setReviewInput(e.target.value)}
@@ -1431,19 +1460,29 @@ export default function StudyPage() {
               <div>
                 <h3 className="text-base font-extrabold text-cocoa-900 flex items-center gap-2">
                   <Award className="w-5 h-5 text-honey-500" />
-                  <span>Hoàn thành buổi học Ngày {plan.profile.currentDayNumber}</span>
+                  <span>Hoàn thành buổi học Ngày {savedDayNumber ?? plan.profile.currentDayNumber}</span>
                 </h3>
                 <p className="text-xs text-cocoa-600 mt-1">
-                  Lưu tiến độ và để Gemini tổng kết cá nhân hóa cho buổi học ngày mai.
+                  {savedDayNumber !== null
+                    ? 'Kết quả buổi học hôm nay đã được lưu thành công vào nhật ký.'
+                    : 'Lưu tiến độ và để Gemini tổng kết cá nhân hóa cho buổi học ngày mai.'}
                 </p>
               </div>
-              <button
-                onClick={handleCompleteDay}
-                disabled={completingDay}
-                className="clay-btn-sage px-5 py-3 text-sm"
-              >
-                {completingDay ? 'Đang tổng kết...' : 'Lưu buổi học & Nhận xét AI'}
-              </button>
+              {savedDayNumber === null ? (
+                <button
+                  type="button"
+                  onClick={handleCompleteDay}
+                  disabled={completingDay}
+                  className="clay-btn-sage px-5 py-3 text-sm shrink-0"
+                >
+                  {completingDay ? 'Đang tổng kết...' : 'Lưu buổi học & Nhận xét AI'}
+                </button>
+              ) : (
+                <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[18px] bg-sage-100/95 border border-sage-300/70 text-sage-800 text-sm font-extrabold shadow-clay-sm shrink-0 animate-fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-sage-600 shrink-0" />
+                  <span>Đã lưu buổi học Ngày {savedDayNumber}</span>
+                </div>
+              )}
             </div>
 
             {dailyCoachResult && (
